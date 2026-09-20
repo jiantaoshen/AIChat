@@ -1,0 +1,14 @@
+# This file excludes generated build output, local environment files, IDE folders, and dependency caches from source control.
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+backend/bin/
+backend/obj/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db

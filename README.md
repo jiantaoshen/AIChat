@@ -8,19 +8,18 @@ The current MVP is text-only and focuses on local inference, structured emotion 
 
 ## Features
 
-- Local Qwen inference through Ollama
-- ASP.NET Core backend
-- Next.js + shadcn/ui frontend
-- Visual-novel-style half-body avatar layout
-- Emotion states: `neutral`, `happy`, `sad`, `angry`, `surprised`, `confused`
-- Operational `thinking` state
-- Gesture states: `none`, `nod`, `shake`, `jump`
-- Structured JSON response protocol
-- C# validation and motion policy
-- Automatic return to `neutral` after temporary expressions
-- Scrollable conversation log dialog
-- Hybrid Fluid desktop layout for 1080p, 1440p, ultrawide, and 4K displays
-- No cloud API key required
+* Local Qwen inference through Ollama
+* ASP.NET Core backend
+* Next.js + shadcn/ui frontend
+* Visual-novel-style half-body avatar layout
+* Emotion states: `neutral`, `happy`, `sad`, `angry`, `surprised`, `confused`
+* Operational `thinking` state
+* Gesture states: `none`, `nod`, `shake`, `jump`
+* Structured JSON response protocol
+* C# validation and motion policy
+* Automatic return to `neutral` after temporary expressions
+* Scrollable conversation log dialog
+* No cloud API key required
 
 ## Architecture
 
@@ -54,17 +53,19 @@ Example model output:
 }
 ```
 
-The LLM handles **semantic decisions**. Deterministic C# code handles **validation, application state, timing, and motion rules**.
+The LLM handles **semantic decisions**.
+
+Deterministic C# code handles **validation, application state, timing, and motion rules**.
 
 ## UI
 
 The main interface uses a visual-novel-style layout:
 
-- character stage in the main area
-- current AI reply displayed over the stage
-- user input fixed at the bottom
-- telemetry / control panel on the right
-- full conversation history inside a modal log window
+* character stage in the main area
+* current AI reply displayed over the stage
+* user input fixed at the bottom
+* telemetry / control panel on the right
+* full conversation history inside a modal log window
 
 The layout follows a **Viewport Fluid + Component Capped** approach:
 
@@ -79,29 +80,29 @@ Viewport
 └─ Typography ────── capped
 ```
 
-This allows the UI to use large displays without scaling every component uncontrollably.
+This allows the UI to make use of large displays without scaling every component uncontrollably.
 
 ## Tech Stack
 
 ### Frontend
 
-- Next.js
-- React
-- TypeScript
-- Tailwind CSS 4
-- shadcn/ui
-- Lucide icons
+* Next.js
+* React
+* TypeScript
+* Tailwind CSS 4
+* shadcn/ui
+* Lucide icons
 
 ### Backend
 
-- ASP.NET Core
-- .NET 10
-- C#
+* ASP.NET Core
+* .NET 10
+* C#
 
 ### AI
 
-- Ollama
-- `qwen3:4b-instruct-2507-q4_K_M`
+* Ollama
+* `qwen3:4b-instruct-2507-q4_K_M`
 
 ## Project Structure
 
@@ -134,10 +135,10 @@ backend/
 
 ### 1. Requirements
 
-- Windows 11 x64
-- .NET 10 SDK
-- Node.js 24+
-- Ollama
+* Windows 11 x64
+* .NET 10 SDK
+* Node.js 24+
+* Ollama
 
 ### 2. Pull the model
 
@@ -155,6 +156,7 @@ ollama run qwen3:4b-instruct-2507-q4_K_M
 
 ```powershell
 cd backend
+
 dotnet restore
 dotnet run
 ```
@@ -169,6 +171,7 @@ http://localhost:5191
 
 ```powershell
 cd frontend
+
 npm install
 Copy-Item .env.local.example .env.local
 npm run dev
@@ -188,7 +191,7 @@ http://localhost:3000
 
 ## Avatar Protocol
 
-The model does not directly control CSS transforms or animation values.
+The model does not directly control CSS transforms, animation values, or application state.
 
 It only returns semantic intent:
 
@@ -207,7 +210,34 @@ sad + jump
 sad + none
 ```
 
-This keeps low-level avatar behavior under application control.
+This keeps low-level avatar behavior under application control instead of giving the LLM direct control over rendering.
+
+## Frontend Engineering Principles
+
+The frontend follows a simple styling hierarchy:
+
+```text
+shadcn/ui components
+    ↓
+Tailwind CSS for layout and local styling
+    ↓
+CSS variables for design-system tokens
+    ↓
+Native CSS for special cases
+```
+
+In practice:
+
+* Use **shadcn/ui** when a suitable reusable component already exists.
+* Use **Tailwind CSS** for layout, spacing, typography, responsive behavior, and small visual adjustments.
+* Use **CSS variables** for shared design-system values such as colors, radius, and semantic tokens.
+* Use normal **CSS** for animations, pseudo-elements, complex gradients, `color-mix()`, and specialized visual composition.
+
+The project also follows **DRY** principles:
+
+> **Don't repeat knowledge or rules, not merely syntax.**
+
+Shared types, constants, behavior, and reusable UI concepts should have a single source of truth. Small coincidental repetitions are preferred over unnecessary abstractions.
 
 ## Design Principle
 

@@ -80,26 +80,29 @@ export function AvatarStage({
 
   return (
     <section
-      className="avatar-stage"
+      className="avatar-stage relative min-h-[clamp(32rem,66dvh,54rem)] min-w-0 overflow-hidden rounded-3xl border border-border bg-background shadow-sm desktop:h-full desktop:min-h-0"
       aria-label={`Avatar state: ${visibleState}`}
     >
-      <div className="avatar-stage-sky" aria-hidden="true" />
-      <div className="avatar-stage-ground" aria-hidden="true" />
+      <div className="avatar-stage-sky absolute inset-0" aria-hidden="true" />
       <div
-        className="avatar-stage-building avatar-stage-building-left"
+        className="avatar-stage-ground absolute inset-x-0 bottom-0 h-[40%]"
         aria-hidden="true"
       />
       <div
-        className="avatar-stage-building avatar-stage-building-right"
+        className="avatar-stage-building avatar-stage-building-left hidden"
         aria-hidden="true"
       />
-      <div className="avatar-stage-horizon" aria-hidden="true" />
+      <div
+        className="avatar-stage-building avatar-stage-building-right hidden"
+        aria-hidden="true"
+      />
+      <div className="avatar-stage-horizon hidden" aria-hidden="true" />
 
-      <div className="avatar-character-viewport">
-        <div className="avatar-character-frame">
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="avatar-character-frame absolute left-1/2 -translate-x-1/2">
           <div
             key={`${animationKey}-${sprite}-${activeGesture}`}
-            className={`avatar-character-motion ${motionClass}`}
+            className={`avatar-character-motion relative size-full origin-[50%_30%] will-change-transform ${motionClass}`}
             style={motionStyle}
           >
             <Image
@@ -108,25 +111,35 @@ export function AvatarStage({
               fill
               priority
               sizes="(max-width: 768px) 94vw, (max-width: 1440px) 70vw, 76rem"
-              className="avatar-character-image"
+              className="object-contain object-top"
             />
           </div>
         </div>
       </div>
 
-      <Badge variant="secondary" className="avatar-state-badge">
-        <span className="avatar-state-dot" aria-hidden="true" />
+      <Badge
+        variant="secondary"
+        className="absolute z-20 gap-2 border border-border bg-background/90 px-3 py-1.5 text-xs capitalize text-foreground shadow-sm backdrop-blur-md inset-bs-[clamp(0.75rem,1vw,1.25rem)] inset-s-[clamp(0.75rem,1vw,1.25rem)]"
+      >
+        <span
+          className="size-2 rounded-full bg-primary shadow-[0_0_0.75rem_rgb(113_150_20_/55%)]"
+          aria-hidden="true"
+        />
         {visibleState}
       </Badge>
 
-      <Card className="avatar-dialog-card">
-        <CardContent className="avatar-dialog-content">
-          <div className="avatar-dialog-heading">
-            <Badge className="avatar-dialog-name">AVATAR</Badge>
-            <span className="avatar-dialog-meta">local dialogue</span>
+      <Card className="avatar-dialog-card absolute left-1/2 z-30 w-[min(calc(100%-var(--avatar-dialog-inset)-var(--avatar-dialog-inset)),var(--avatar-dialog-max-width))] -translate-x-1/2 gap-0 overflow-hidden py-0 backdrop-blur-md bottom-[clamp(1rem,2.2vw,2rem)]">
+        <CardContent className="px-(--avatar-dialog-padding-x) py-(--avatar-dialog-padding-y)">
+          <div className="mb-2 flex items-center gap-3">
+            <Badge className="text-[0.68rem] font-bold tracking-[0.12em]">
+              AVATAR
+            </Badge>
+            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              local dialogue
+            </span>
           </div>
           <p
-            className={`avatar-dialog-text${isThinking ? " avatar-dialog-thinking" : ""}`}
+            className={`min-h-12 whitespace-pre-wrap text-(length:--avatar-dialog-text) leading-[1.75] text-foreground${isThinking ? " animate-pulse" : ""}`}
             aria-live="polite"
           >
             {reply}

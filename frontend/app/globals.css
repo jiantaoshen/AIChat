@@ -1,4 +1,4 @@
-/* Active global styles for the AI Avatar site only. Reusable rules are grouped to keep Avatar CSS compact and TSX semantic. */
+/* Global theme/tokens plus the Avatar effects that are clearer as real CSS than as utilities. */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -37,7 +37,7 @@
 
   --radius: 1rem;
 
-  /* Viewport-fluid shell; individual components are capped. */
+  /* Shared Avatar layout constants; component-level layout is applied in TSX. */
   --avatar-page-gutter: clamp(0.75rem, 0.8vw, 1.25rem);
   --avatar-layout-gap: clamp(0.75rem, 0.75vw, 1rem);
   --avatar-sidebar-width: clamp(19rem, 17vw, 23rem);
@@ -76,97 +76,40 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Tailwind v4 custom responsive variant: desktop:* / max-desktop:* */
+  --breakpoint-desktop: 72rem;
 }
 
 /* ============================================================
    Base + accessibility
    ============================================================ */
 
-html {
-  @apply scroll-smooth bg-background;
-}
+@layer base {
+  html {
+    @apply scroll-smooth bg-background;
+  }
 
-body {
-  @apply min-h-screen bg-background font-sans text-foreground antialiased;
-  text-rendering: optimizeLegibility;
-}
+  body {
+    @apply min-h-screen bg-background font-sans text-foreground antialiased;
+    text-rendering: optimizeLegibility;
+  }
 
-button,
-select {
-  @apply cursor-pointer;
-}
+  button,
+  select {
+    @apply cursor-pointer;
+  }
 
-::selection {
-  @apply bg-primary text-primary-foreground;
+  ::selection {
+    @apply bg-primary text-primary-foreground;
+  }
 }
-
 
 /* ============================================================
-   Avatar shell + input
+   Avatar visual effects / composition
    ============================================================ */
-
-.avatar-page {
-  @apply flex min-h-dvh w-full items-center justify-center bg-muted text-foreground;
-  padding: var(--avatar-page-gutter);
-}
-
-.avatar-shell {
-  @apply grid w-full min-w-0;
-  height: calc(100dvh - 2 * var(--avatar-page-gutter));
-  gap: var(--avatar-layout-gap);
-}
-
-.avatar-main {
-  @apply grid min-h-0 min-w-0 overflow-hidden;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: var(--avatar-layout-gap);
-}
-
-/* The stage is not a shadcn primitive, so its surface styling remains here. */
-.avatar-stage {
-  @apply rounded-3xl border border-border bg-background shadow-sm;
-}
-
-.avatar-input-card { @apply gap-0 py-0; }
-.avatar-input-content { padding: clamp(0.75rem, 0.9vw, 1.1rem); }
-
-.avatar-input-form {
-  @apply grid min-w-0 items-stretch;
-  grid-template-columns: minmax(0, 1fr) clamp(8.5rem, 10vw, 10.5rem);
-  gap: var(--avatar-control-gap);
-}
-
-.avatar-input-textarea,
-.avatar-send-button {
-  min-height: var(--avatar-input-height);
-  height: 100%;
-}
-
-.avatar-input-textarea {
-  @apply resize-none;
-  padding: clamp(0.75rem, 0.8vw, 1rem) clamp(0.9rem, 1vw, 1.2rem);
-  font-size: clamp(0.9rem, 0.28vw + 0.78rem, 1.05rem);
-  line-height: 1.6;
-}
-
-.avatar-send-button {
-  min-width: clamp(8.5rem, 10vw, 10.5rem);
-  @apply self-stretch;
-}
-
-.avatar-loading-icon { @apply animate-spin; }
-
-/* ============================================================
-   Avatar stage
-   ============================================================ */
-
-.avatar-stage {
-  @apply relative min-h-0 min-w-0 overflow-hidden;
-  min-height: clamp(32rem, 66dvh, 54rem);
-}
 
 .avatar-stage-sky {
-  @apply absolute inset-0;
   background-image:
     linear-gradient(180deg, rgb(255 255 255 / 10%) 0%, rgb(255 255 255 / 4%) 36%, rgb(24 32 51 / 16%) 100%),
     url("/backgrounds/beijing-palace.png");
@@ -176,14 +119,8 @@ select {
 }
 
 .avatar-stage-ground {
-  @apply absolute inset-x-0 bottom-0;
-  height: 40%;
   background: linear-gradient(180deg, rgb(24 32 51 / 0%), rgb(24 32 51 / 5%) 36%, rgb(24 32 51 / 18%));
 }
-
-/* These nodes remain in TSX for compatibility but are intentionally hidden. */
-.avatar-stage-building,
-.avatar-stage-horizon { display: none; }
 
 .avatar-stage::after {
   content: "";
@@ -193,24 +130,12 @@ select {
   pointer-events: none;
 }
 
-.avatar-character-viewport { @apply absolute inset-0 overflow-hidden; }
 .avatar-character-frame {
-  @apply absolute left-1/2 -translate-x-1/2;
   top: clamp(0.25rem, 0.8dvh, 0.75rem);
 
   /*
-     Phone -> Full HD:
-     keep the same chest-up visual-novel framing.
-
-     Current character sprites are 1086 x 1448 transparent PNGs,
-     which is exactly a 3:4 portrait ratio. Because Next/Image uses fill,
-     the frame must keep an explicit aspect ratio so its width can be
-     derived from the stage-relative height.
-  */
-  /*
-     <= Full HD:
-     fixed upper-body framing. 150% keeps the full head visible and places
-     the lower crop around the chest / upper torso for the 3:4 sprite.
+     The 1086 x 1448 sprites are exactly 3:4. Keep the frame ratio explicit
+     so Next/Image fill can preserve the visual-novel crop as height changes.
   */
   height: 150%;
   width: auto;
@@ -219,181 +144,25 @@ select {
 }
 
 .avatar-character-motion {
-  @apply relative size-full origin-[50%_30%] will-change-transform;
   opacity: var(--avatar-character-opacity, 1);
   filter:
     drop-shadow(0 1.5rem 2.6rem rgb(24 32 51 / 16%))
     drop-shadow(0 0 1.5rem rgb(113 150 201 / var(--avatar-character-glow-alpha, 0.08)));
 }
 
-.avatar-character-image { @apply object-contain object-top; }
-
-.avatar-state-badge {
-  @apply absolute z-20 gap-2 border border-border bg-background/90 px-3 py-1.5
-    text-xs capitalize text-foreground shadow-sm backdrop-blur-md;
-  inset-block-start: clamp(0.75rem, 1vw, 1.25rem);
-  inset-inline-start: clamp(0.75rem, 1vw, 1.25rem);
-}
-
-.avatar-state-dot {
-  @apply size-2 rounded-full bg-primary;
-  box-shadow: 0 0 0.75rem rgb(113 150 201 / 55%);
-}
-
 .avatar-dialog-card {
-  @apply absolute z-30 gap-0 overflow-hidden py-0 backdrop-blur-md;
-  left: 50%;
-  bottom: clamp(1rem, 2.2vw, 2rem);
-  width: min(calc(100% - var(--avatar-dialog-inset) - var(--avatar-dialog-inset)), var(--avatar-dialog-max-width));
-  transform: translateX(-50%);
   background: color-mix(in srgb, var(--brand-white) 92%, transparent);
   box-shadow: 0 1rem 3rem rgb(24 32 51 / 16%);
 }
 
-.avatar-dialog-content { padding: var(--avatar-dialog-padding-y) var(--avatar-dialog-padding-x); }
-.avatar-dialog-heading { @apply mb-2 flex items-center gap-3; }
-.avatar-dialog-name { @apply text-[0.68rem] font-bold tracking-[0.12em]; }
-.avatar-dialog-meta { @apply text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground; }
-.avatar-dialog-text {
-  @apply min-h-12 whitespace-pre-wrap text-foreground;
-  font-size: var(--avatar-dialog-text);
-  line-height: 1.75;
-}
-.avatar-dialog-thinking { @apply animate-pulse; }
-
 /* ============================================================
-   Telemetry sidebar
+   Character composition breakpoints
    ============================================================ */
-
-.avatar-sidebar-card {
-  @apply min-h-0 gap-4;
-  padding: var(--avatar-sidebar-pad);
-}
-
-.avatar-sidebar-header {
-  @apply border-b border-border;
-  padding: 0 0 clamp(0.9rem, 0.9vw, 1.15rem);
-}
-
-/* Shared compact metadata typography. */
-.avatar-sidebar-kicker,
-.avatar-model-label,
-.avatar-telemetry-label span,
-.avatar-log-kicker {
-  @apply font-bold uppercase tracking-[0.12em];
-}
-
-.avatar-sidebar-kicker {
-  @apply flex items-center gap-2 text-[0.68rem] tracking-[0.16em] text-primary;
-}
-
-.avatar-sidebar-title { font-size: clamp(1.15rem, 0.5vw + 0.9rem, 1.45rem); }
-.avatar-sidebar-statuses { @apply flex flex-wrap items-center gap-2 pt-1; }
-.avatar-status-badge { @apply capitalize; }
-.avatar-icon-xs { @apply size-3.5; }
-.avatar-icon-sm { @apply size-4; }
-
-.avatar-sidebar-content {
-  @apply flex min-h-0 flex-1 flex-col;
-  gap: var(--avatar-control-gap);
-  padding-top: clamp(0.9rem, 0.9vw, 1.1rem);
-}
-
-.avatar-telemetry-grid {
-  @apply grid;
-  gap: clamp(0.5rem, 0.5vw, 0.75rem);
-}
-
-.avatar-telemetry-item,
-.avatar-model-card {
-  @apply gap-2 bg-muted py-3 shadow-none;
-}
-
-.avatar-compact-card-content { @apply px-3; }
-.avatar-model-label { @apply block text-[0.62rem] text-muted-foreground; }
-.avatar-model-value { @apply mt-1 break-words text-xs leading-5 text-foreground/80; }
-.avatar-telemetry-label { @apply flex items-center gap-2 text-muted-foreground; }
-.avatar-telemetry-label span { @apply text-[0.62rem]; }
-.avatar-telemetry-value {
-  @apply mt-1.5 block truncate font-semibold capitalize text-foreground;
-  font-size: clamp(0.95rem, 0.25vw + 0.85rem, 1.1rem);
-}
-.avatar-telemetry-detail { @apply mt-0.5 block truncate text-[0.68rem] text-muted-foreground; }
-
-.avatar-sidebar-actions { @apply mt-auto grid gap-3 pt-4; }
-.avatar-sidebar-action-button {
-  @apply w-full;
-  min-height: 3.25rem;
-}
-
-.avatar-error-card { @apply border-destructive/35 bg-destructive/5 py-3 text-destructive shadow-none; }
-.avatar-error-content { @apply px-3 text-xs leading-5; }
-.avatar-error-content strong { @apply block; }
-.avatar-error-content span { @apply mt-1 block break-words opacity-80; }
-
-/* ============================================================
-   Conversation log
-   ============================================================ */
-
-.avatar-log-dialog {
-  @apply flex flex-col gap-0 overflow-hidden p-0;
-  width: min(92vw, 58rem);
-  height: min(78dvh, 52rem);
-  max-width: none;
-  box-shadow: 0 1.75rem 5.5rem rgb(24 32 51 / 22%);
-}
-
-.avatar-log-header {
-  @apply shrink-0 gap-1 border-b border-border pr-14;
-  padding: clamp(1rem, 1.1vw, 1.35rem) clamp(1rem, 1.25vw, 1.5rem);
-}
-
-.avatar-log-kicker { @apply text-xs text-primary; }
-.avatar-log-title { @apply text-lg; }
-.avatar-log-scroll { @apply min-h-0 flex-1; }
-.avatar-log-list {
-  @apply flex flex-col gap-3;
-  padding: clamp(0.9rem, 1vw, 1.25rem);
-}
-
-.avatar-log-message {
-  @apply rounded-2xl border px-4 py-3;
-  max-width: 86%;
-}
-.avatar-log-message-user { @apply ml-auto border-primary/20 bg-primary/10; }
-.avatar-log-message-assistant { @apply mr-auto border-border bg-muted; }
-.avatar-log-role { @apply mb-1.5 h-5 px-2 text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground; }
-.avatar-log-copy { @apply whitespace-pre-wrap text-sm leading-6 text-foreground; }
-.avatar-log-thinking { @apply animate-pulse text-sm text-primary; }
-
-/* ============================================================
-   Responsive layout
-   ============================================================ */
-
-@media (min-width: 72rem) {
-  .avatar-page { height: 100dvh; overflow: hidden; }
-  .avatar-shell { min-height: 0; grid-template-columns: minmax(0, 1fr) var(--avatar-sidebar-width); }
-  .avatar-main,
-  .avatar-sidebar-card { height: 100%; }
-  .avatar-stage { height: 100%; min-height: 0; }
-}
-
-@media (min-width: 40rem) and (max-width: 71.999rem) {
-  .avatar-telemetry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 47.999rem) {
-  .avatar-page { @apply items-start; }
-  .avatar-shell { height: auto; min-height: calc(100dvh - 2 * var(--avatar-page-gutter)); }
-  .avatar-input-form { grid-template-columns: minmax(0, 1fr); }
-  .avatar-send-button { @apply w-full; }
-}
 
 /*
-   Character framing:
-   - <= 1920px: fixed chest / upper-body composition.
-   - > 1920px: gradually reveal more of the character.
-   - >= 3840px: stop at the 4K composition.
+   <= 1920px: fixed chest / upper-body composition.
+   > 1920px: gradually reveal more of the character.
+   >= 3840px: stop at the 4K composition.
 */
 @media (min-width: 2240px) {
   .avatar-character-frame { height: 145%; }

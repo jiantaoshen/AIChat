@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { SubmitEvent } from "react";
 import { LoaderCircleIcon, SendIcon } from "lucide-react";
 import { AvatarStage } from "@/components/AvatarStage";
 import { ChatLogModal } from "@/components/ChatLogModal";
@@ -40,24 +40,23 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [decision, setDecision] = useState<AvatarDecision>(INITIAL_DECISION);
   const [telemetry, setTelemetry] = useState<ModelTelemetry | null>(null);
-  const [operationalState, setOperationalState] =
-    useState<OperationalState>("idle");
+  const [operationalState, setOperationalState] = useState<OperationalState>("idle");
   const [animationKey, setAnimationKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isLogOpen, setIsLogOpen] = useState(false);
   const neutralResetTimerRef = useRef<number | null>(null);
 
-  const canSend = input.trim().length > 0 && operationalState !== "thinking";
+  const isThinking = operationalState === "thinking";
+  const canSend = input.trim().length > 0 && !isThinking;
   const latestAssistantMessage = [...messages]
     .reverse()
     .find((message) => message.role === "assistant");
 
-  const visibleReply =
-    operationalState === "thinking"
-      ? "……"
-      : error
-        ? "本地模型似乎没有正常回应。请检查右侧状态。"
-        : decision.speech || latestAssistantMessage?.content || "";
+  const visibleReply = isThinking
+    ? "……"
+    : error
+      ? "本地模型似乎没有正常回应。请检查右侧状态。"
+      : decision.speech || latestAssistantMessage?.content || "";
 
   useEffect(() => {
     return () => {
@@ -67,11 +66,11 @@ export function ChatPanel() {
     };
   }, []);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const text = input.trim();
-    if (!text || operationalState === "thinking") {
+    if (!text || isThinking) {
       return;
     }
 
@@ -165,9 +164,9 @@ export function ChatPanel() {
   }
 
   return (
-    <main className="avatar-page">
-      <div className="avatar-shell">
-        <section className="avatar-main">
+    <main className="flex min-h-dvh w-full items-center justify-center bg-muted p-(--avatar-page-gutter) text-foreground desktop:h-dvh desktop:overflow-hidden max-md:items-start">
+      <div className="grid h-[calc(100dvh-2*var(--avatar-page-gutter))] w-full min-w-0 gap-(--avatar-layout-gap) desktop:min-h-0 desktop:grid-cols-[minmax(0,1fr)_var(--avatar-sidebar-width)] max-md:h-auto max-md:min-h-[calc(100dvh-2*var(--avatar-page-gutter))]">
+        <section className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-(--avatar-layout-gap) overflow-hidden desktop:h-full">
           <AvatarStage
             emotion={decision.emotion}
             emotionIntensity={decision.emotionIntensity}
@@ -178,9 +177,12 @@ export function ChatPanel() {
             reply={visibleReply}
           />
 
-          <Card className="avatar-input-card">
-            <CardContent className="avatar-input-content">
-              <form className="avatar-input-form" onSubmit={handleSubmit}>
+          <Card className="gap-0 py-0">
+            <CardContent className="p-[clamp(0.75rem,0.9vw,1.1rem)]">
+              <form
+                className="grid min-w-0 grid-cols-[minmax(0,1fr)_clamp(8.5rem,10vw,10.5rem)] items-stretch gap-(--avatar-control-gap) max-md:grid-cols-[minmax(0,1fr)]"
+                onSubmit={handleSubmit}
+              >
                 <label htmlFor="chat-input" className="sr-only">
                   Message
                 </label>
@@ -197,19 +199,19 @@ export function ChatPanel() {
                   placeholder="输入文字… / Type a message… / Skriv något…"
                   rows={2}
                   maxLength={2000}
-                  className="avatar-input-textarea"
+                  className="h-full min-h-(--avatar-input-height) resize-none px-[clamp(0.9rem,1vw,1.2rem)] py-[clamp(0.75rem,0.8vw,1rem)] text-[clamp(0.9rem,0.28vw+0.78rem,1.05rem)] leading-[1.6]"
                 />
                 <Button
                   type="submit"
                   size="lg"
                   disabled={!canSend}
-                  className="avatar-send-button"
+                  className="h-full min-h-(--avatar-input-height) min-w-[clamp(8.5rem,10vw,10.5rem)] self-stretch max-md:w-full"
                 >
-                  {operationalState === "thinking" ? (
+                  {isThinking ? (
                     <>
                       <LoaderCircleIcon
                         data-icon="inline-start"
-                        className="avatar-loading-icon"
+                        className="animate-spin"
                       />
                       Thinking
                     </>

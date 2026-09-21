@@ -1,4 +1,4 @@
-// This file renders the right-side control rail; layout and presentation are centralized in globals.css while this component only describes telemetry structure and behavior.
+// This file renders the right-side control rail using shadcn/ui primitives plus local Tailwind layout/presentation utilities.
 "use client";
 
 import type { ReactNode } from "react";
@@ -49,40 +49,42 @@ export function TelemetrySidebar({
   const visibleGesture = isThinking ? "local" : decision.gesture;
 
   return (
-    <Card className="avatar-sidebar-card">
-      <CardHeader className="avatar-sidebar-header">
-        <CardDescription className="avatar-sidebar-kicker">
-          <SparklesIcon className="avatar-icon-xs" />
+    <Card className="min-h-0 gap-4 p-(--avatar-sidebar-pad) desktop:h-full">
+      <CardHeader className="border-b border-border pb-[clamp(0.9rem,0.9vw,1.15rem)]">
+        <CardDescription className="flex items-center gap-2 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-primary">
+          <SparklesIcon className="size-3.5" />
           Local Avatar
         </CardDescription>
-        <CardTitle className="avatar-sidebar-title">Control Panel</CardTitle>
-        <div className="avatar-sidebar-statuses">
+        <CardTitle className="text-[clamp(1.15rem,0.5vw+0.9rem,1.45rem)]">
+          Control Panel
+        </CardTitle>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
           <Badge variant="secondary">LOCAL</Badge>
           <Badge
             variant={stateBadgeVariant(operationalState)}
-            className="avatar-status-badge"
+            className="capitalize"
           >
             {operationalState}
           </Badge>
         </div>
       </CardHeader>
 
-      <CardContent className="avatar-sidebar-content">
-        <div className="avatar-telemetry-grid">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-(--avatar-control-gap) pt-[clamp(0.9rem,0.9vw,1.1rem)]">
+        <div className="grid gap-[clamp(0.5rem,0.5vw,0.75rem)] sm:max-desktop:grid-cols-2">
           <TelemetryItem
-            icon={<BrainCircuitIcon className="avatar-icon-sm" />}
+            icon={<BrainCircuitIcon className="size-4" />}
             label="Expression"
             value={visibleEmotion}
             detail={`${Math.round((isThinking ? 0.35 : decision.emotionIntensity) * 100)}% intensity`}
           />
           <TelemetryItem
-            icon={<ActivityIcon className="avatar-icon-sm" />}
+            icon={<ActivityIcon className="size-4" />}
             label="Gesture"
             value={visibleGesture}
             detail={`${Math.round((isThinking ? 0 : decision.gestureIntensity) * 100)}% intensity`}
           />
           <TelemetryItem
-            icon={<CpuIcon className="avatar-icon-sm" />}
+            icon={<CpuIcon className="size-4" />}
             label="Inference"
             value={
               telemetry?.totalDurationMs != null
@@ -96,7 +98,7 @@ export function TelemetrySidebar({
             }
           />
           <TelemetryItem
-            icon={<MessageSquareTextIcon className="avatar-icon-sm" />}
+            icon={<MessageSquareTextIcon className="size-4" />}
             label="Tokens"
             value={
               telemetry
@@ -107,29 +109,35 @@ export function TelemetrySidebar({
           />
         </div>
 
-        <Card size="sm" className="avatar-model-card">
-          <CardContent className="avatar-compact-card-content">
-            <span className="avatar-model-label">Model</span>
-            <p className="avatar-model-value">
+        <Card size="sm" className="gap-2 bg-muted py-3 shadow-none">
+          <CardContent className="px-3">
+            <span className="block text-[0.62rem] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              Model
+            </span>
+            <p className="mt-1 wrap-break-words text-xs leading-5 text-foreground/80">
               {telemetry?.model ?? DEFAULT_MODEL}
             </p>
           </CardContent>
         </Card>
 
         {error && (
-          <Card size="sm" className="avatar-error-card" role="alert">
-            <CardContent className="avatar-error-content">
-              <strong>Local model error</strong>
-              <span>{error}</span>
+          <Card
+            size="sm"
+            className="border-destructive/35 bg-destructive/5 py-3 text-destructive shadow-none"
+            role="alert"
+          >
+            <CardContent className="px-3 text-xs leading-5">
+              <strong className="block">Local model error</strong>
+              <span className="mt-1 block wrap-break-words opacity-80">{error}</span>
             </CardContent>
           </Card>
         )}
 
-        <div className="avatar-sidebar-actions">
+        <div className="mt-auto grid gap-3 pt-4">
           <Button
             type="button"
             size="lg"
-            className="avatar-sidebar-action-button"
+            className="min-h-13 w-full"
             onClick={onOpenLog}
           >
             <MessageSquareTextIcon data-icon="inline-start" />
@@ -138,9 +146,9 @@ export function TelemetrySidebar({
           <Button
             type="button"
             size="lg"
-            className="avatar-sidebar-action-button"
+            className="min-h-13 w-full"
             onClick={onReset}
-            disabled={operationalState === "thinking"}
+            disabled={isThinking}
           >
             <RotateCcwIcon data-icon="inline-start" />
             Reset conversation
@@ -163,14 +171,20 @@ function TelemetryItem({
   detail: string;
 }) {
   return (
-    <Card size="sm" className="avatar-telemetry-item">
-      <CardContent className="avatar-compact-card-content">
-        <div className="avatar-telemetry-label">
+    <Card size="sm" className="gap-2 bg-muted py-3 shadow-none">
+      <CardContent className="px-3">
+        <div className="flex items-center gap-2 text-muted-foreground">
           {icon}
-          <span>{label}</span>
+          <span className="text-[0.62rem] font-bold uppercase tracking-[0.12em]">
+            {label}
+          </span>
         </div>
-        <strong className="avatar-telemetry-value">{value}</strong>
-        <small className="avatar-telemetry-detail">{detail}</small>
+        <strong className="mt-1.5 block truncate text-[clamp(0.95rem,0.25vw+0.85rem,1.1rem)] font-semibold capitalize text-foreground">
+          {value}
+        </strong>
+        <small className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">
+          {detail}
+        </small>
       </CardContent>
     </Card>
   );

@@ -1,4 +1,4 @@
-// This file renders the complete conversation history in an accessible shadcn/ui Dialog; visual styling is centralized in globals.css.
+// This file renders the complete conversation history in an accessible shadcn/ui Dialog with local Tailwind layout/presentation utilities.
 "use client";
 
 import { useEffect, useRef } from "react";
@@ -49,42 +49,52 @@ export function ChatLogModal({
         }
       }}
     >
-      <DialogContent className="avatar-log-dialog">
-        <DialogHeader className="avatar-log-header">
-          <span className="avatar-log-kicker">Session history</span>
-          <DialogTitle className="avatar-log-title">Conversation log</DialogTitle>
+      <DialogContent className="flex h-[min(78dvh,52rem)] w-[min(92vw,58rem)] max-w-none flex-col gap-0 overflow-hidden p-0 shadow-[0_1.75rem_5.5rem_rgb(24_32_51/22%)]">
+        <DialogHeader className="shrink-0 gap-1 border-b border-border px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.1vw,1.35rem)]">
+          <span className="text-xs font-bold uppercase tracking-[0.12em] text-primary">
+            Session history
+          </span>
+          <DialogTitle className="text-lg">Conversation log</DialogTitle>
           <DialogDescription>
             All user and avatar messages in the current local session.
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="avatar-log-scroll">
-          <div className="avatar-log-list">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col gap-3 p-[clamp(0.9rem,1vw,1.25rem)]">
             {messages.map((message, index) => {
               const roleClass =
                 message.role === "user"
-                  ? "avatar-log-message-user"
-                  : "avatar-log-message-assistant";
+                  ? "ml-auto border-primary/20 bg-primary/10"
+                  : "mr-auto border-border bg-muted";
 
               return (
                 <article
                   key={`${message.role}-${index}`}
-                  className={`avatar-log-message ${roleClass}`}
+                  className={`max-w-[86%] rounded-2xl border px-4 py-3 ${roleClass}`}
                 >
-                  <Badge variant="outline" className="avatar-log-role">
+                  <Badge
+                    variant="outline"
+                    className="mb-1.5 h-5 px-2 text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground"
+                  >
                     {message.role === "user" ? "You" : "Avatar"}
                   </Badge>
-                  <p className="avatar-log-copy">{message.content}</p>
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+                    {message.content}
+                  </p>
                 </article>
               );
             })}
 
             {operationalState === "thinking" && (
-              <article className="avatar-log-message avatar-log-message-assistant">
-                <Badge variant="outline" className="avatar-log-role">
+              <article className="mr-auto max-w-[86%] rounded-2xl border border-border bg-muted px-4 py-3">
+                <Badge
+                  variant="outline"
+                  className="mb-1.5 h-5 px-2 text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground"
+                >
                   Avatar
                 </Badge>
-                <p className="avatar-log-thinking">…</p>
+                <p className="animate-pulse text-sm text-primary">…</p>
               </article>
             )}
 

@@ -1,10 +1,10 @@
 # AI Avatar — Local Qwen Visual Novel Agent
 
-A local-first AI avatar project built with **Next.js**, **React**, **TypeScript**, **shadcn/ui**, **Base UI**, **Tailwind CSS 4**, **ASP.NET Core**, **Ollama**, **Qwen 4B**, and **CosyVoice3**.
+A local-first AI avatar project built with **Next.js**, **React**, **TypeScript**, **shadcn/ui**, **Base UI**, **Tailwind CSS 4**, **ASP.NET Core / .NET 10**, **SQLite / EF Core**, **Ollama**, **Qwen 4B**, and **CosyVoice3**.
 
-The current MVP uses **text input** and local **text-to-speech**. Qwen handles semantic decisions such as dialogue, emotion, and gesture, while deterministic C# code owns validation, application state, timing, motion policy, and bounded TTS behavior.
+The current MVP uses **keyboard text input** and local **text-to-speech**. Qwen handles semantic decisions such as dialogue, emotion, and gesture, while deterministic C# code owns validation, runtime state, persistence, timing, motion policy, and bounded TTS behavior.
 
-No cloud API key is required for the main runtime path.
+Conversation data and runtime telemetry are persisted locally in SQLite. No cloud API key is required for the main runtime path.
 
 ![AI Avatar UI](assets/avatar-ui.png)
 
@@ -13,6 +13,10 @@ No cloud API key is required for the main runtime path.
 - Local Qwen inference through Ollama
 - Local CosyVoice3 text-to-speech
 - ASP.NET Core / .NET 10 backend
+- SQLite persistence through Entity Framework Core
+- Persistent `Conversations`, `Messages`, `LlmTelemetry`, and `TtsTelemetry`
+- Automatic EF Core migration application on backend startup
+- SQLite foreign-key enforcement and WAL journal mode
 - Next.js + React + TypeScript frontend
 - shadcn/ui + Base UI primitives
 - Tailwind CSS 4 styling and layout
@@ -40,6 +44,12 @@ User text
 Next.js Frontend
    ↓
 ASP.NET Core Backend
+   ├──────────────────────────────→ SQLite
+   │                                ├─ Conversations
+   │                                ├─ Messages
+   │                                ├─ LlmTelemetry
+   │                                └─ TtsTelemetry
+   │
    ↓
 Ollama
    ↓
@@ -49,6 +59,7 @@ Structured Avatar Decision
    ↓
 C# Validation
    ├─ Motion Policy
+   ├─ Persistence
    └─ TTS Policy
         ↓
      CosyVoice3
@@ -74,7 +85,7 @@ Example model output:
 
 The LLM handles **semantic decisions**.
 
-Deterministic application code handles **validation, runtime state, timing, animation rules, and TTS control**.
+Deterministic application code handles **validation, runtime state, persistence, timing, animation rules, and TTS control**.
 
 ## Runtime Flow
 
@@ -83,13 +94,23 @@ A normal assistant turn follows this sequence:
 ```text
 idle
  ↓
+user message
+ ↓
+SQLite: persist user message
+ ↓
 thinking
  ↓
 Qwen response
  ↓
+SQLite: persist assistant message
+ ↓
+SQLite: persist LLM telemetry
+ ↓
 synthesizing
  ↓
 CosyVoice3 WAV generation
+ ↓
+SQLite: persist TTS telemetry
  ↓
 speaking
  ↓
@@ -102,9 +123,11 @@ neutral / idle
 
 If TTS fails, the textual AI response remains available. Voice generation is an enhancement layer, not a dependency for basic chat rendering.
 
+The current frontend keeps the active UI conversation in browser state while the backend persists each conversation and message to SQLite. Full conversation browsing/restoration from SQLite is a later UI layer and is not required for the current persistence path.
+
 ## Avatar Protocol
 
-The model does **not** directly control CSS transforms, animation distances, application state, or audio parameters.
+The model does **not** directly control CSS transforms, animation distances, application state, database operations, or raw audio parameters.
 
 It only returns semantic values:
 
@@ -128,7 +151,115 @@ C# motion policy
 sad + none
 ```
 
-This keeps low-level avatar behavior under application control instead of giving the LLM direct control over rendering.
+This keeps low-level avatar behavior under application control instead of giving the LLM direct control over rendering or persistence.
+
+## Local Persistence
+
+Runtime data is stored in a local SQLite database:
+
+```text
+backend/data/avatar.db
+```
+
+The database is created and migrated automatically when the ASP.NET Core backend starts.
+
+The current schema contains four application tables:
+
+```text
+Conversations
+Messages
+LlmTelemetry
+TtsTelemetry
+```
+
+Relationships:
+
+```text
+Conversation
+    │
+    └── Message
+          ├── LlmTelemetry
+          └── TtsTelemetry
+```
+
+### Conversations
+
+Stores one local conversation and its timestamps.
+
+```text
+Id
+Title
+CreatedAtUtc
+UpdatedAtUtc
+```
+
+A new conversation title is derived from the first user message and capped by backend persistence rules.
+
+### Messages
+
+Stores user and assistant messages.
+
+Assistant messages can also store avatar semantics:
+
+```text
+Emotion
+EmotionIntensity
+Gesture
+GestureIntensity
+```
+
+Each message belongs to one conversation.
+
+### LlmTelemetry
+
+Stores one Ollama/Qwen telemetry record per persisted assistant message:
+
+```text
+Model
+TotalDurationMs
+LoadDurationMs
+PromptTokens
+OutputTokens
+CreatedAtUtc
+```
+
+### TtsTelemetry
+
+Stores one successful CosyVoice telemetry record per persisted assistant message:
+
+```text
+Model
+VoiceSource
+SynthesisDurationMs
+AudioDurationMs
+RealTimeFactor
+UsedCuda
+UsedFp16
+CreatedAtUtc
+```
+
+`AudioDurationMs` and `RealTimeFactor` are part of the schema for later performance analysis. In the current implementation they may remain `NULL` until WAV-duration measurement is added.
+
+### SQLite runtime behavior
+
+The backend enables:
+
+```text
+Foreign Keys = ON
+journal_mode = WAL
+```
+
+EF Core migrations are applied automatically during startup.
+
+Generated runtime database files are excluded from Git:
+
+```text
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal
+```
+
+Migration source files remain committed to the repository.
 
 ## Local Text-to-Speech
 
@@ -149,6 +280,8 @@ The service is started with the project-local Python environment:
 ```text
 tools/cosyvoice/.venv/Scripts/python.exe
 ```
+
+The current setup uses the CosyVoice runtime dependency set rather than maintaining a custom dependency-pruned runtime. Windows-specific setup handling remains in the project setup scripts.
 
 ### Custom avatar voice
 
@@ -196,6 +329,70 @@ C# TTS policy
 controlled CosyVoice instruction
    ↓
 CosyVoice3 synthesis
+```
+
+Successful synthesis is linked to the persisted assistant message through `assistantMessageId`, allowing TTS telemetry to be stored against the exact reply that produced the audio.
+
+## Persistence-Aware API Flow
+
+The chat request includes the current conversation identifier:
+
+```json
+{
+  "conversationId": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "你好"
+    }
+  ]
+}
+```
+
+When `conversationId` is `null`, the backend creates a new conversation.
+
+A successful chat response returns persistence identifiers together with the avatar decision and model telemetry:
+
+```json
+{
+  "conversationId": "193a8146-0000-0000-0000-000000000000",
+  "assistantMessageId": "a58dfa27-0000-0000-0000-000000000000",
+  "decision": {
+    "speech": "你好。今天想聊些什么？",
+    "emotion": "happy",
+    "emotionIntensity": 0.5,
+    "gesture": "nod",
+    "gestureIntensity": 0.3
+  },
+  "telemetry": {
+    "model": "qwen3:4b-instruct-2507-q4_K_M",
+    "totalDurationMs": 2400,
+    "loadDurationMs": 80,
+    "promptTokens": 420,
+    "outputTokens": 72
+  }
+}
+```
+
+The frontend then includes the persisted assistant message identifier in the speech request:
+
+```json
+{
+  "messageId": "a58dfa27-0000-0000-0000-000000000000",
+  "text": "你好。今天想聊些什么？",
+  "emotion": "happy",
+  "emotionIntensity": 0.5
+}
+```
+
+This creates a deterministic link:
+
+```text
+Conversation
+   ↓
+Assistant Message
+   ├─ LLM telemetry
+   └─ TTS telemetry
 ```
 
 ## UI
@@ -314,7 +511,7 @@ textarea.tsx
 
 These primitives own reusable component behavior and shared variants.
 
-They should not know about Qwen, avatar emotions, gestures, or CosyVoice.
+They should not know about Qwen, avatar emotions, gestures, CosyVoice, or SQLite persistence semantics.
 
 ### Tailwind CSS
 
@@ -334,12 +531,14 @@ For example, a sidebar button can remain a standard shared `Button`:
 <Button
   type="button"
   size="lg"
-  className="w-full"
+  className="min-w-0 w-full max-w-full"
   onClick={onReplay}
   disabled={!canReplay}
 >
   <Volume2Icon />
-  Replay voice
+  <span className="min-w-0 truncate">
+    Replay voice
+  </span>
 </Button>
 ```
 
@@ -395,6 +594,12 @@ Avatar emotion meaning
 
 Replay audio behavior
 → speech hook / domain logic
+
+Conversation persistence
+→ ConversationStore / EF Core
+
+Database schema
+→ AvatarDbContext + migrations
 ```
 
 This keeps generic UI infrastructure independent from avatar-specific behavior.
@@ -417,6 +622,10 @@ This keeps generic UI infrastructure independent from avatar-specific behavior.
 - ASP.NET Core
 - .NET 10
 - C# 14
+- Entity Framework Core 10
+- SQLite
+- `Microsoft.EntityFrameworkCore.Sqlite`
+- `Microsoft.EntityFrameworkCore.Design`
 
 ### Local AI
 
@@ -489,14 +698,31 @@ frontend/
    └─ chat.ts
 
 backend/
+├─ Data/
+│  ├─ AvatarDbContext.cs
+│  └─ Entities/
+│     ├─ ConversationEntity.cs
+│     ├─ MessageEntity.cs
+│     ├─ LlmTelemetryEntity.cs
+│     └─ TtsTelemetryEntity.cs
+├─ Migrations/
+│  ├─ 20260930170000_InitialAvatarDatabase.cs
+│  ├─ 20260930170000_InitialAvatarDatabase.Designer.cs
+│  └─ AvatarDbContextModelSnapshot.cs
 ├─ Models/
 ├─ Options/
 ├─ Services/
+│  ├─ Persistence/
+│  │  ├─ IConversationStore.cs
+│  │  └─ ConversationStore.cs
 │  └─ Speech/
 │     ├─ CosyVoiceClient.cs
 │     ├─ CosyVoiceServerHostedService.cs
 │     └─ TtsSpeechPolicy.cs
+├─ data/
+│  └─ avatar.db                 # generated locally; ignored by Git
 ├─ Program.cs
+├─ AiAvatar.Backend.csproj
 └─ appsettings.json
 
 tools/
@@ -570,11 +796,15 @@ or:
 .\SETUP_COSYVOICE_WINDOWS.cmd -TorchBackend cu121
 ```
 
+The current setup does not depend on a custom dependency-trimming stage. CosyVoice runtime dependencies needed by its upstream import path are retained.
+
 ### 4. Install frontend and backend dependencies
 
 ```powershell
 .\SETUP_WINDOWS.cmd
 ```
+
+The backend project includes EF Core SQLite packages. Normal .NET restore installs them automatically.
 
 ### 5. Configure the frontend API URL
 
@@ -607,7 +837,77 @@ Ollama:     http://localhost:11434
 CosyVoice:  http://127.0.0.1:8188
 ```
 
-### 7. Run CosyVoice separately for debugging
+### 7. SQLite startup behavior
+
+The backend resolves the SQLite database relative to the backend content root:
+
+```text
+backend/data/avatar.db
+```
+
+On startup it:
+
+```text
+creates backend/data if needed
+        ↓
+opens SQLite
+        ↓
+applies EF Core migrations
+        ↓
+enables WAL mode
+        ↓
+starts the API
+```
+
+No separate SQLite database server is required.
+
+### 8. Inspect the local database
+
+You can open:
+
+```text
+backend/data/avatar.db
+```
+
+with tools such as DBeaver, DataGrip, SQLiteStudio, DB Browser for SQLite, or a VS Code SQLite extension.
+
+Useful tables:
+
+```sql
+SELECT * FROM Conversations ORDER BY UpdatedAtUtc DESC;
+
+SELECT * FROM Messages ORDER BY CreatedAtUtc DESC;
+
+SELECT * FROM LlmTelemetry ORDER BY CreatedAtUtc DESC;
+
+SELECT * FROM TtsTelemetry ORDER BY CreatedAtUtc DESC;
+```
+
+A combined assistant-performance query:
+
+```sql
+SELECT
+    m.CreatedAtUtc,
+    m.Content,
+    m.Emotion,
+    m.Gesture,
+    l.TotalDurationMs AS LlmMs,
+    l.PromptTokens,
+    l.OutputTokens,
+    t.SynthesisDurationMs AS TtsMs,
+    t.RealTimeFactor,
+    t.UsedCuda,
+    t.UsedFp16
+FROM Messages m
+LEFT JOIN LlmTelemetry l
+    ON l.MessageId = m.Id
+LEFT JOIN TtsTelemetry t
+    ON t.MessageId = m.Id
+WHERE m.Role = 'assistant'
+ORDER BY m.CreatedAtUtc DESC;
+```
+
+### 9. Run CosyVoice separately for debugging
 
 If you want to inspect TTS logs directly:
 
@@ -634,15 +934,29 @@ backend/appsettings.json
 The main sections are:
 
 ```text
+ConnectionStrings
 Ollama
 CosyVoice
 Character
 Logging
 ```
 
+The database connection is:
+
+```json
+{
+  "ConnectionStrings": {
+    "AvatarDatabase": "Data Source=data/avatar.db;Foreign Keys=True"
+  }
+}
+```
+
 Example responsibilities:
 
 ```text
+ConnectionStrings
+→ local SQLite database path
+
 Ollama
 → endpoint, model, context, temperature, token limit
 
@@ -655,7 +969,25 @@ Character
 
 ## Conversation and Replay Voice
 
-The latest successfully synthesized WAV is retained by the frontend as a browser object URL.
+Each active browser conversation carries a `conversationId`.
+
+```text
+first message
+    ↓
+conversationId = null
+    ↓
+backend creates Conversation
+    ↓
+response returns conversationId
+    ↓
+later messages reuse the same ID
+```
+
+The backend persists each new user and assistant message to SQLite.
+
+Resetting the current conversation clears the frontend state and sets the browser-side `conversationId` back to `null`, so the next message starts a new persisted conversation. Existing SQLite records are not deleted by the frontend reset action.
+
+The latest successfully synthesized WAV is retained by the frontend as a browser object URL:
 
 ```text
 CosyVoice3 response
@@ -685,10 +1017,18 @@ Included:
 - custom reference voice support
 - replay voice
 - conversation log
+- SQLite conversation persistence
+- SQLite message persistence
+- Qwen/Ollama telemetry persistence
+- CosyVoice telemetry persistence
+- automatic EF Core migrations
 - responsive visual-novel UI
 
 Not currently included:
 
+- database-backed conversation browser / history restoration UI
+- analytics dashboard for persisted telemetry
+- WAV-duration / RTF calculation in the current telemetry pipeline
 - Push-to-Talk
 - microphone input
 - Whisper ASR
@@ -697,10 +1037,10 @@ Not currently included:
 - Live2D
 - realtime lip sync
 
-These can be added later without changing the central architecture because input perception, language reasoning, avatar policy, and speech output are kept as separate layers.
+These can be added later without changing the central architecture because input perception, language reasoning, persistence, avatar policy, and speech output are kept as separate layers.
 
 ## Design Principle
 
 > **LLM for semantic decisions. Deterministic code for control.**
 
-The project explores how a small local language model can drive an embodied interface without directly controlling low-level rendering, runtime state, motion parameters, or unrestricted voice-generation behavior.
+The project explores how a small local language model can drive an embodied interface without directly controlling low-level rendering, runtime state, persistence rules, motion parameters, or unrestricted voice-generation behavior.

@@ -1,4 +1,4 @@
-// This file renders the Hybrid Fluid visual-novel stage: a cropped upper-body avatar, local thinking/gesture motion, state badge, and the latest assistant reply layered over the image using the shared website theme.
+// This file renders the Hybrid Fluid visual-novel stage; only image composition/effects and motion keyframes live in globals.css, while layout stays in Tailwind class names.
 "use client";
 
 import Image from "next/image";
@@ -54,14 +54,25 @@ export function AvatarStage({
   }, []);
 
   const isThinking = operationalState === "thinking";
+  const isSpeaking = operationalState === "speaking";
+  const hasOperationalOverride =
+    operationalState === "thinking" ||
+    operationalState === "synthesizing" ||
+    operationalState === "speaking";
+
   const sprite = isThinking ? thinkingSprite : spriteByEmotion[emotion];
-  const visibleState = isThinking ? "thinking" : emotion;
-  const activeGesture = isThinking ? "none" : gesture;
+  const visibleState = hasOperationalOverride ? operationalState : emotion;
+  const gestureAllowed = operationalState === "idle" || isSpeaking;
+  const activeGesture = gestureAllowed ? gesture : "none";
   const motionClass = isThinking
     ? "avatar-thinking"
-    : gestureClassByGesture[activeGesture];
+    : activeGesture !== "none"
+      ? gestureClassByGesture[activeGesture]
+      : "";
 
-  const safeGestureIntensity = clamp01(isThinking ? 0 : gestureIntensity);
+  const safeGestureIntensity = clamp01(
+    activeGesture === "none" ? 0 : gestureIntensity,
+  );
   const safeEmotionIntensity = clamp01(isThinking ? 0.35 : emotionIntensity);
 
   const nodDistance = Math.round(3 + safeGestureIntensity * 7);
@@ -80,7 +91,7 @@ export function AvatarStage({
 
   return (
     <section
-      className="avatar-stage relative min-h-[clamp(32rem,66dvh,54rem)] min-w-0 overflow-hidden rounded-3xl border border-border bg-background shadow-sm desktop:h-full desktop:min-h-0"
+      className="avatar-stage relative min-w-0 overflow-hidden rounded-3xl border border-border bg-background shadow-sm [height:var(--avatar-stage-height)] [min-height:var(--avatar-stage-min-height)]"
       aria-label={`Avatar state: ${visibleState}`}
     >
       <div className="avatar-stage-sky absolute inset-0" aria-hidden="true" />
@@ -88,15 +99,6 @@ export function AvatarStage({
         className="avatar-stage-ground absolute inset-x-0 bottom-0 h-[40%]"
         aria-hidden="true"
       />
-      <div
-        className="avatar-stage-building avatar-stage-building-left hidden"
-        aria-hidden="true"
-      />
-      <div
-        className="avatar-stage-building avatar-stage-building-right hidden"
-        aria-hidden="true"
-      />
-      <div className="avatar-stage-horizon hidden" aria-hidden="true" />
 
       <div className="absolute inset-0 overflow-hidden">
         <div className="avatar-character-frame absolute left-1/2 -translate-x-1/2">
@@ -119,19 +121,19 @@ export function AvatarStage({
 
       <Badge
         variant="secondary"
-        className="absolute z-20 gap-2 border border-border bg-background/90 px-3 py-1.5 text-xs capitalize text-foreground shadow-sm backdrop-blur-md inset-bs-[clamp(0.75rem,1vw,1.25rem)] inset-s-[clamp(0.75rem,1vw,1.25rem)]"
+        className="absolute top-[var(--avatar-stage-status-inset)] left-[var(--avatar-stage-status-inset)] z-20 gap-2 border border-border bg-background/90 px-3 py-1.5 text-xs capitalize text-foreground shadow-sm backdrop-blur-md"
       >
         <span
-          className="size-2 rounded-full bg-primary shadow-[0_0_0.75rem_rgb(113_150_20_/55%)]"
+          className="size-2 rounded-full bg-primary shadow-[0_0_0.75rem_rgb(113_150_201_/_55%)]"
           aria-hidden="true"
         />
         {visibleState}
       </Badge>
 
-      <Card className="avatar-dialog-card absolute left-1/2 z-30 w-[min(calc(100%-var(--avatar-dialog-inset)-var(--avatar-dialog-inset)),var(--avatar-dialog-max-width))] -translate-x-1/2 gap-0 overflow-hidden py-0 backdrop-blur-md bottom-[clamp(1rem,2.2vw,2rem)]">
-        <CardContent className="px-(--avatar-dialog-padding-x) py-(--avatar-dialog-padding-y)">
+      <Card className="avatar-dialog-card absolute bottom-[var(--avatar-dialog-bottom)] left-1/2 z-30 w-[calc(100%_-_var(--avatar-dialog-inset)_-_var(--avatar-dialog-inset))] max-w-[var(--avatar-dialog-max-width)] -translate-x-1/2 gap-0 overflow-hidden rounded-3xl border-border py-0 backdrop-blur-md">
+        <CardContent className="px-[var(--avatar-dialog-padding-x)] py-[var(--avatar-dialog-padding-y)]">
           <div className="mb-2 flex items-center gap-3">
-            <Badge className="text-[0.68rem] font-bold tracking-[0.12em]">
+            <Badge className="rounded-full bg-primary px-3 py-1 text-[0.68rem] font-bold tracking-[0.12em] text-primary-foreground">
               AVATAR
             </Badge>
             <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -139,7 +141,7 @@ export function AvatarStage({
             </span>
           </div>
           <p
-            className={`min-h-12 whitespace-pre-wrap text-(length:--avatar-dialog-text) leading-[1.75] text-foreground${isThinking ? " animate-pulse" : ""}`}
+            className={`min-h-12 whitespace-pre-wrap text-[var(--avatar-dialog-text)] leading-[1.75] text-foreground${isThinking ? " animate-pulse" : ""}`}
             aria-live="polite"
           >
             {reply}

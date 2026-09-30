@@ -1,8 +1,9 @@
-# This file excludes generated build output, local environment files, IDE folders, and dependency caches from source control.
+# This file excludes generated build output, local environment files, IDE folders, dependency caches, model weights, and private voice data from source control.
 frontend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/.env.local
+frontend/tsconfig.tsbuildinfo
 backend/bin/
 backend/obj/
 .vs/
@@ -12,3 +13,11 @@ backend/obj/
 *.suo
 .DS_Store
 Thumbs.db
+
+# Local CosyVoice Python venv, repository, generated requirements, model weights, and private/reference voice data created by SETUP_COSYVOICE_WINDOWS.cmd.
+tools/cosyvoice/.venv/
+tools/cosyvoice/requirements-windows-venv.txt
+tools/cosyvoice/CosyVoice/
+tools/cosyvoice/models/
+tools/cosyvoice/voice/reference.wav
+tools/cosyvoice/voice/reference.txt

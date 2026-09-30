@@ -1,4 +1,4 @@
-// This file provides the accessible shadcn/ui Dialog and owns reusable overlay, popup, close button, header, footer, title, and description styling.
+// This file provides the accessible shadcn/ui Dialog structure using Base UI primitives and Tailwind classes.
 "use client";
 
 import * as React from "react";
@@ -27,7 +27,10 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
   return (
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
-      className={cn("fixed inset-0 isolate z-50 bg-black/45 backdrop-blur-[2px]", className)}
+      className={cn(
+        "fixed inset-0 isolate z-50 bg-foreground/20 backdrop-blur-[2px]",
+        className,
+      )}
       {...props}
     />
   );
@@ -45,7 +48,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border bg-background text-foreground shadow-xl outline-none",
+          "fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border bg-background text-foreground shadow-2xl outline-none",
           className,
         )}
         {...props}
@@ -75,7 +78,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col", className)}
+      className={cn("flex flex-col gap-1.5", className)}
       {...props}
     />
   );
@@ -86,7 +89,7 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="dialog-footer"
       className={cn(
-        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+        "flex gap-2 [flex-direction:var(--ui-dialog-footer-direction)] [justify-content:var(--ui-dialog-footer-justify)]",
         className,
       )}
       {...props}
@@ -98,7 +101,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("font-semibold leading-none", className)}
+      className={cn("text-lg font-semibold leading-none", className)}
       {...props}
     />
   );

@@ -1,4 +1,4 @@
-// This file renders the complete conversation history in an accessible shadcn/ui Dialog with local Tailwind layout/presentation utilities.
+// This file renders the complete conversation history in an accessible shadcn/ui Dialog; page-specific presentation stays in Tailwind class names.
 "use client";
 
 import { useEffect, useRef } from "react";
@@ -49,9 +49,9 @@ export function ChatLogModal({
         }
       }}
     >
-      <DialogContent className="flex h-[min(78dvh,52rem)] w-[min(92vw,58rem)] max-w-none flex-col gap-0 overflow-hidden p-0 shadow-[0_1.75rem_5.5rem_rgb(24_32_51/22%)]">
-        <DialogHeader className="shrink-0 gap-1 border-b border-border px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.1vw,1.35rem)]">
-          <span className="text-xs font-bold uppercase tracking-[0.12em] text-primary">
+      <DialogContent className="flex max-w-none flex-col gap-0 overflow-hidden rounded-3xl p-0 shadow-2xl [height:var(--avatar-modal-height)] [width:var(--avatar-modal-width)]">
+        <DialogHeader className="shrink-0 gap-1 border-b border-border px-[var(--avatar-modal-header-pad-x)] py-[var(--avatar-modal-header-pad-y)] pr-14">
+          <span className="text-xs font-semibold uppercase tracking-widest text-primary">
             Session history
           </span>
           <DialogTitle className="text-lg">Conversation log</DialogTitle>
@@ -60,8 +60,8 @@ export function ChatLogModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-3 p-[clamp(0.9rem,1vw,1.25rem)]">
+        <ScrollArea className="min-h-0 flex-1 rounded-none">
+          <div className="flex flex-col gap-3 p-[var(--avatar-modal-body-pad)]">
             {messages.map((message, index) => {
               const roleClass =
                 message.role === "user"
@@ -71,7 +71,7 @@ export function ChatLogModal({
               return (
                 <article
                   key={`${message.role}-${index}`}
-                  className={`max-w-[86%] rounded-2xl border px-4 py-3 ${roleClass}`}
+                  className={`max-w-[86%] rounded-xl border px-4 py-3 ${roleClass}`}
                 >
                   <Badge
                     variant="outline"
@@ -87,14 +87,14 @@ export function ChatLogModal({
             })}
 
             {operationalState === "thinking" && (
-              <article className="mr-auto max-w-[86%] rounded-2xl border border-border bg-muted px-4 py-3">
+              <article className="mr-auto max-w-[86%] rounded-xl border border-border bg-muted px-4 py-3">
                 <Badge
                   variant="outline"
                   className="mb-1.5 h-5 px-2 text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground"
                 >
                   Avatar
                 </Badge>
-                <p className="animate-pulse text-sm text-primary">…</p>
+                <p className="animate-pulse text-sm text-muted-foreground">…</p>
               </article>
             )}
 

@@ -37,18 +37,57 @@
 
   --radius: 1rem;
 
-  /* Shared Avatar layout constants; component-level layout is applied in TSX. */
-  --avatar-page-gutter: clamp(0.75rem, 0.8vw, 1.25rem);
-  --avatar-layout-gap: clamp(0.75rem, 0.75vw, 1rem);
-  --avatar-sidebar-width: clamp(19rem, 17vw, 23rem);
-  --avatar-sidebar-pad: clamp(0.9rem, 1vw, 1.25rem);
-  --avatar-control-gap: clamp(0.65rem, 0.65vw, 0.9rem);
-  --avatar-dialog-inset: clamp(1rem, 1.6vw, 2rem);
+  /* Shared UI responsive tokens consumed by primitives. */
+  --ui-dialog-footer-direction: column-reverse;
+  --ui-dialog-footer-justify: flex-start;
+
+  /*
+     Shared responsive Avatar tokens.
+     Components consume these values directly and do not own viewport breakpoints.
+     Media queries below selectively enhance layout instead of scaling the whole UI.
+  */
+  --avatar-page-align: flex-start;
+  --avatar-page-gutter: 0.625rem;
+  --avatar-layout-gap: 0.625rem;
+  --avatar-layout-columns: minmax(0, 1fr);
+  --avatar-shell-height: auto;
+
+  --avatar-stage-height: auto;
+  --avatar-stage-min-height: clamp(28rem, 70svh, 38rem);
+  --avatar-character-top: 0.25rem;
+  --avatar-character-height: 158%;
+
+  --avatar-sidebar-width: 100%;
+  --avatar-sidebar-height: auto;
+  --avatar-sidebar-pad: 0.9rem;
+  --avatar-sidebar-header-pad-bottom: 0.9rem;
+  --avatar-sidebar-content-pad-top: 0.9rem;
+  --avatar-sidebar-title-size: 1.15rem;
+  --avatar-control-gap: 0.65rem;
+  --avatar-telemetry-columns: minmax(0, 1fr);
+  --avatar-telemetry-value-size: 0.95rem;
+
+  --avatar-stage-status-inset: 0.75rem;
+  --avatar-dialog-inset: 0.75rem;
+  --avatar-dialog-bottom: 0.75rem;
   --avatar-dialog-max-width: 76rem;
-  --avatar-dialog-padding-x: clamp(1rem, 1.15vw, 1.5rem);
-  --avatar-dialog-padding-y: clamp(0.9rem, 0.9vw, 1.2rem);
-  --avatar-dialog-text: clamp(1rem, 0.28vw + 0.88rem, 1.22rem);
-  --avatar-input-height: clamp(4rem, 5.25dvh, 5.25rem);
+  --avatar-dialog-padding-x: 0.9rem;
+  --avatar-dialog-padding-y: 0.8rem;
+  --avatar-dialog-text: 1rem;
+
+  --avatar-input-card-pad: 0.75rem;
+  --avatar-input-height: 3.75rem;
+  --avatar-input-padding-x: 0.9rem;
+  --avatar-input-padding-y: 0.75rem;
+  --avatar-input-text-size: 0.9rem;
+  --avatar-input-columns: minmax(0, 1fr);
+  --avatar-input-button-width: 100%;
+
+  --avatar-modal-width: calc(100vw - 1.25rem);
+  --avatar-modal-height: min(84dvh, 52rem);
+  --avatar-modal-header-pad-x: 1rem;
+  --avatar-modal-header-pad-y: 1rem;
+  --avatar-modal-body-pad: 0.9rem;
 }
 
 @theme inline {
@@ -77,8 +116,6 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Tailwind v4 custom responsive variant: desktop:* / max-desktop:* */
-  --breakpoint-desktop: 72rem;
 }
 
 /* ============================================================
@@ -131,13 +168,13 @@
 }
 
 .avatar-character-frame {
-  top: clamp(0.25rem, 0.8dvh, 0.75rem);
+  top: var(--avatar-character-top);
 
   /*
      The 1086 x 1448 sprites are exactly 3:4. Keep the frame ratio explicit
      so Next/Image fill can preserve the visual-novel crop as height changes.
   */
-  height: 150%;
+  height: var(--avatar-character-height);
   width: auto;
   aspect-ratio: 3 / 4;
   max-width: none;
@@ -156,41 +193,210 @@
 }
 
 /* ============================================================
-   Character composition breakpoints
+   Responsive token system
    ============================================================ */
 
-/*
-   <= 1920px: fixed chest / upper-body composition.
-   > 1920px: gradually reveal more of the character.
-   >= 3840px: stop at the 4K composition.
-*/
-@media (min-width: 2240px) {
-  .avatar-character-frame { height: 145%; }
+/* Small tablet / large phone: increase breathing room and use two telemetry columns. */
+@media (min-width: 40rem) {
+  :root {
+    --ui-dialog-footer-direction: row;
+    --ui-dialog-footer-justify: flex-end;
+
+    --avatar-page-gutter: 0.75rem;
+    --avatar-layout-gap: 0.75rem;
+    --avatar-stage-min-height: clamp(32rem, 68svh, 42rem);
+    --avatar-character-height: 154%;
+    --avatar-sidebar-pad: 1rem;
+    --avatar-sidebar-header-pad-bottom: 1rem;
+    --avatar-sidebar-content-pad-top: 1rem;
+    --avatar-sidebar-title-size: 1.25rem;
+    --avatar-telemetry-columns: repeat(2, minmax(0, 1fr));
+    --avatar-stage-status-inset: 0.875rem;
+    --avatar-dialog-inset: 1rem;
+    --avatar-dialog-bottom: 1rem;
+    --avatar-dialog-padding-x: 1rem;
+    --avatar-dialog-padding-y: 0.9rem;
+    --avatar-modal-width: min(92vw, 58rem);
+    --avatar-modal-height: min(82dvh, 52rem);
+    --avatar-modal-header-pad-x: 1.25rem;
+    --avatar-modal-header-pad-y: 1.1rem;
+    --avatar-modal-body-pad: 1rem;
+  }
 }
 
-@media (min-width: 2560px) {
-  .avatar-character-frame { height: 140%; }
-  .avatar-dialog-card { --avatar-dialog-max-width: 80rem; }
+/* Tablet: keep the page stacked, but place input and send button on one row. */
+@media (min-width: 48rem) {
+  :root {
+    --avatar-stage-min-height: clamp(34rem, 66svh, 46rem);
+    --avatar-input-card-pad: 0.9rem;
+    --avatar-input-height: 4rem;
+    --avatar-input-padding-x: 1rem;
+    --avatar-input-padding-y: 0.85rem;
+    --avatar-input-text-size: 0.95rem;
+    --avatar-input-columns: minmax(0, 1fr) 9.25rem;
+    --avatar-input-button-width: 9.25rem;
+    --avatar-dialog-text: 1.05rem;
+  }
 }
 
-@media (min-width: 2880px) {
-  .avatar-character-frame { height: 135%; }
+/* Laptop / desktop: switch to stage + capped sidebar and fit the shell to the viewport. */
+@media (min-width: 72rem) {
+  :root {
+    --avatar-page-align: center;
+    --avatar-page-gutter: 0.75rem;
+    --avatar-layout-gap: 0.75rem;
+    --avatar-layout-columns: minmax(0, 1fr) var(--avatar-sidebar-width);
+    --avatar-shell-height: calc(100dvh - var(--avatar-page-gutter) - var(--avatar-page-gutter));
+
+    --avatar-stage-height: 100%;
+    --avatar-stage-min-height: 0px;
+    --avatar-character-height: 150%;
+
+    --avatar-sidebar-width: 19rem;
+    --avatar-sidebar-height: 100%;
+    --avatar-sidebar-pad: 0.9rem;
+    --avatar-sidebar-header-pad-bottom: 0.9rem;
+    --avatar-sidebar-content-pad-top: 0.9rem;
+    --avatar-sidebar-title-size: 1.2rem;
+    --avatar-control-gap: 0.65rem;
+    --avatar-telemetry-columns: minmax(0, 1fr);
+    --avatar-telemetry-value-size: 0.98rem;
+
+    --avatar-stage-status-inset: 0.9rem;
+    --avatar-dialog-inset: 1rem;
+    --avatar-dialog-bottom: 1rem;
+    --avatar-dialog-padding-x: 1.1rem;
+    --avatar-dialog-padding-y: 0.9rem;
+    --avatar-dialog-text: 1.05rem;
+
+    --avatar-input-card-pad: 0.85rem;
+    --avatar-input-height: 4rem;
+    --avatar-input-padding-x: 1rem;
+    --avatar-input-padding-y: 0.8rem;
+    --avatar-input-text-size: 0.95rem;
+    --avatar-input-columns: minmax(0, 1fr) 9.5rem;
+    --avatar-input-button-width: 9.5rem;
+  }
 }
 
-@media (min-width: 3200px) {
-  .avatar-character-frame { height: 130%; }
+/* Large laptop / 1440-wide desktop: add space to individual components, not the whole page. */
+@media (min-width: 90rem) {
+  :root {
+    --avatar-page-gutter: 1rem;
+    --avatar-layout-gap: 1rem;
+    --avatar-sidebar-width: 20rem;
+    --avatar-sidebar-pad: 1rem;
+    --avatar-sidebar-header-pad-bottom: 1rem;
+    --avatar-sidebar-content-pad-top: 1rem;
+    --avatar-sidebar-title-size: 1.35rem;
+    --avatar-control-gap: 0.75rem;
+    --avatar-telemetry-value-size: 1.05rem;
+    --avatar-stage-status-inset: 1rem;
+    --avatar-dialog-inset: 1.5rem;
+    --avatar-dialog-bottom: 1.5rem;
+    --avatar-dialog-padding-x: 1.25rem;
+    --avatar-dialog-padding-y: 1rem;
+    --avatar-dialog-text: 1.1rem;
+    --avatar-input-card-pad: 1rem;
+    --avatar-input-height: 4.25rem;
+    --avatar-input-padding-x: 1.1rem;
+    --avatar-input-padding-y: 0.9rem;
+    --avatar-input-text-size: 1rem;
+    --avatar-input-button-width: 10rem;
+    --avatar-input-columns: minmax(0, 1fr) 10rem;
+  }
 }
 
-@media (min-width: 3440px) {
-  .avatar-character-frame { height: 125%; }
+/* Full HD and above: modestly widen capped components. */
+@media (min-width: 120rem) {
+  :root {
+    --avatar-page-gutter: 1.25rem;
+    --avatar-sidebar-width: 21.5rem;
+    --avatar-sidebar-pad: 1.1rem;
+    --avatar-sidebar-header-pad-bottom: 1.1rem;
+    --avatar-sidebar-content-pad-top: 1rem;
+    --avatar-sidebar-title-size: 1.45rem;
+    --avatar-telemetry-value-size: 1.1rem;
+    --avatar-dialog-inset: 2rem;
+    --avatar-dialog-max-width: 76rem;
+    --avatar-dialog-padding-x: 1.4rem;
+    --avatar-dialog-padding-y: 1.05rem;
+    --avatar-dialog-text: 1.15rem;
+    --avatar-modal-header-pad-x: 1.5rem;
+    --avatar-modal-header-pad-y: 1.25rem;
+    --avatar-modal-body-pad: 1.25rem;
+    --avatar-input-height: 4.5rem;
+    --avatar-input-button-width: 10.5rem;
+    --avatar-input-columns: minmax(0, 1fr) 10.5rem;
+  }
 }
 
-@media (min-width: 3840px) {
-  .avatar-character-frame { height: 120%; }
+/* Character composition gradually reveals more of the sprite on very wide displays. */
+@media (min-width: 140rem) {
+  :root { --avatar-character-height: 145%; }
 }
 
+/* QHD and above: keep components capped while revealing more of the scene. */
+@media (min-width: 160rem) {
+  :root {
+    --avatar-page-gutter: 1.5rem;
+    --avatar-sidebar-width: 22.5rem;
+    --avatar-character-height: 140%;
+    --avatar-dialog-max-width: 80rem;
+    --avatar-input-height: 4.75rem;
+  }
+}
+
+@media (min-width: 180rem) {
+  :root { --avatar-character-height: 135%; }
+}
+
+@media (min-width: 200rem) {
+  :root { --avatar-character-height: 130%; }
+}
+
+@media (min-width: 215rem) {
+  :root {
+    --avatar-sidebar-width: 23rem;
+    --avatar-character-height: 125%;
+  }
+}
+
+@media (min-width: 240rem) {
+  :root {
+    --avatar-sidebar-width: 24rem;
+    --avatar-character-height: 120%;
+    --avatar-dialog-max-width: 84rem;
+    --avatar-input-height: 5rem;
+  }
+}
+
+/* Phone / tablet landscape: avoid forcing a portrait-sized stage into a short viewport. */
+@media (max-width: 71.999rem) and (max-height: 36rem) {
+  :root {
+    --avatar-stage-min-height: 24rem;
+    --avatar-character-height: 150%;
+    --avatar-dialog-bottom: 0.625rem;
+    --avatar-dialog-padding-y: 0.7rem;
+    --avatar-input-height: 3.5rem;
+  }
+}
+
+/* Short laptop screens: preserve vertical room by tightening only vertical tokens. */
 @media (min-width: 72rem) and (max-height: 48rem) {
-  .avatar-dialog-card { bottom: 0.85rem; }
+  :root {
+    --avatar-page-gutter: 0.625rem;
+    --avatar-layout-gap: 0.625rem;
+    --avatar-sidebar-pad: 0.8rem;
+    --avatar-sidebar-header-pad-bottom: 0.75rem;
+    --avatar-sidebar-content-pad-top: 0.75rem;
+    --avatar-control-gap: 0.55rem;
+    --avatar-dialog-bottom: 0.75rem;
+    --avatar-dialog-padding-y: 0.8rem;
+    --avatar-input-card-pad: 0.75rem;
+    --avatar-input-height: 3.75rem;
+    --avatar-input-padding-y: 0.7rem;
+  }
 }
 
 /* ============================================================

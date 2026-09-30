@@ -1,4 +1,4 @@
-// This file defines frontend types shared by the chat UI, avatar renderer, local backend API, and inference telemetry panel.
+// This file defines frontend types shared by the local Qwen chat UI, SQLite-backed conversation flow, avatar renderer, CosyVoice3 TTS pipeline, and inference telemetry panel.
 export type Emotion =
   | "neutral"
   | "happy"
@@ -9,7 +9,12 @@ export type Emotion =
 
 export type Gesture = "none" | "nod" | "shake" | "jump";
 
-export type OperationalState = "idle" | "thinking" | "error";
+export type OperationalState =
+  | "idle"
+  | "thinking"
+  | "synthesizing"
+  | "speaking"
+  | "error";
 
 export type MessageRole = "user" | "assistant";
 
@@ -35,10 +40,20 @@ export interface ModelTelemetry {
 }
 
 export interface AvatarChatResponse {
+  conversationId: string;
+  assistantMessageId: string;
   decision: AvatarDecision;
   telemetry: ModelTelemetry;
 }
 
 export interface ChatRequest {
+  conversationId: string | null;
   messages: ChatMessage[];
+}
+
+export interface SpeechSynthesisRequest {
+  messageId: string;
+  text: string;
+  emotion: Emotion;
+  emotionIntensity: number;
 }

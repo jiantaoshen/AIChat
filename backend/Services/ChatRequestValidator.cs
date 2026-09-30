@@ -1,4 +1,4 @@
-// This file performs deterministic input validation before conversation data is sent to Ollama.
+// This file performs deterministic input validation before conversation data is persisted or sent to Ollama.
 using AiAvatar.Backend.Models;
 
 namespace AiAvatar.Backend.Services;
@@ -15,6 +15,11 @@ public static class ChatRequestValidator
             return "At least one chat message is required.";
         }
 
+        if (request.ConversationId == Guid.Empty)
+        {
+            return "ConversationId must be null or a non-empty GUID.";
+        }
+
         if (request.Messages.Count > MaxMessages)
         {
             return $"This MVP accepts at most {MaxMessages} messages per request.";
@@ -29,10 +34,26 @@ public static class ChatRequestValidator
                 return "Every message must contain a role and text content.";
             }
 
+            var role = message.Role.Trim().ToLowerInvariant();
+            if (role is not ("user" or "assistant"))
+            {
+                return $"Unsupported chat role: {message.Role}";
+            }
+
             if (message.Content.Length > MaxCharactersPerMessage)
             {
                 return $"A single message cannot exceed {MaxCharactersPerMessage:N0} characters in this MVP.";
             }
+        }
+
+        var latestMessage = request.Messages[^1];
+        if (!string.Equals(
+                latestMessage.Role.Trim(),
+                "user",
+                StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(latestMessage.Content))
+        {
+            return "The latest chat message must be a non-empty user message.";
         }
 
         return null;

@@ -1,8 +1,12 @@
-// This file wires the ASP.NET Core 10 API, CORS, local Ollama/Qwen chat, CosyVoice3 avatar TTS, health checks, and request validation.
+// This file wires the ASP.NET Core 10 API, SQLite persistence, CORS, local Ollama/Qwen chat, CosyVoice3 avatar TTS, health checks, and request validation.
+using AiAvatar.Backend.Data;
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Options;
 using AiAvatar.Backend.Services;
+using AiAvatar.Backend.Services.Persistence;
 using AiAvatar.Backend.Services.Speech;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,6 +21,32 @@ builder.Services.Configure<CharacterOptions>(
 
 builder.Services.Configure<CosyVoiceOptions>(
     builder.Configuration.GetSection(CosyVoiceOptions.SectionName));
+
+var configuredDatabase = builder.Configuration.GetConnectionString("AvatarDatabase")
+    ?? throw new InvalidOperationException(
+        "ConnectionStrings:AvatarDatabase is missing from appsettings.json.");
+
+var sqliteConnection = new SqliteConnectionStringBuilder(configuredDatabase);
+if (!Path.IsPathRooted(sqliteConnection.DataSource))
+{
+    sqliteConnection.DataSource = Path.GetFullPath(
+        Path.Combine(
+            builder.Environment.ContentRootPath,
+            sqliteConnection.DataSource));
+}
+
+var databaseDirectory = Path.GetDirectoryName(sqliteConnection.DataSource);
+if (!string.IsNullOrWhiteSpace(databaseDirectory))
+{
+    Directory.CreateDirectory(databaseDirectory);
+}
+
+sqliteConnection.ForeignKeys = true;
+
+builder.Services.AddDbContext<AvatarDbContext>(options =>
+    options.UseSqlite(sqliteConnection.ConnectionString));
+
+builder.Services.AddScoped<IConversationStore, ConversationStore>();
 
 builder.Services.AddHttpClient<OllamaClient>(client =>
 {
@@ -51,6 +81,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var database = scope.ServiceProvider.GetRequiredService<AvatarDbContext>();
+    await database.Database.MigrateAsync();
+    await database.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+}
+
 app.UseCors("NextJsDevelopment");
 
 app.MapGet("/health", async (
@@ -69,6 +106,7 @@ app.MapGet("/health", async (
     return Results.Ok(new
     {
         backend = "ok",
+        database = "sqlite",
         ollamaReachable = ollamaStatus.Reachable,
         modelInstalled = ollamaStatus.ModelInstalled,
         ollamaMessage = ollamaStatus.Message,
@@ -79,6 +117,7 @@ app.MapGet("/health", async (
 app.MapPost("/api/speech", async (
     SpeechSynthesisRequest request,
     CosyVoiceClient cosyVoice,
+    IConversationStore conversationStore,
     IOptions<CosyVoiceOptions> cosyVoiceOptions,
     CancellationToken cancellationToken) =>
 {
@@ -90,6 +129,11 @@ app.MapPost("/api/speech", async (
             statusCode: StatusCodes.Status503ServiceUnavailable,
             title: "Local TTS is disabled",
             detail: "Enable the CosyVoice section in appsettings.json before using avatar speech.");
+    }
+
+    if (request.MessageId == Guid.Empty)
+    {
+        return Results.BadRequest(new { error = "A persisted assistant messageId is required for speech." });
     }
 
     if (string.IsNullOrWhiteSpace(request.Text))
@@ -110,10 +154,30 @@ app.MapPost("/api/speech", async (
         return Results.BadRequest(new { error = $"Unsupported emotion: {request.Emotion}" });
     }
 
+    if (!await conversationStore.AssistantMessageExistsAsync(
+            request.MessageId,
+            cancellationToken))
+    {
+        return Results.NotFound(new
+        {
+            error = $"Assistant message '{request.MessageId}' was not found in the local database.",
+        });
+    }
+
     try
     {
-        var audio = await cosyVoice.SynthesizeAsync(request, cancellationToken);
-        return Results.File(audio, "audio/wav");
+        var result = await cosyVoice.SynthesizeAsync(request, cancellationToken);
+
+        await conversationStore.SaveTtsTelemetryAsync(
+            request.MessageId,
+            result,
+            cancellationToken);
+
+        return Results.File(result.Audio, "audio/wav");
+    }
+    catch (KeyNotFoundException exception)
+    {
+        return Results.NotFound(new { error = exception.Message });
     }
     catch (HttpRequestException exception)
     {
@@ -141,6 +205,7 @@ app.MapPost("/api/speech", async (
 app.MapPost("/api/chat", async (
     ChatRequest request,
     OllamaClient ollama,
+    IConversationStore conversationStore,
     CancellationToken cancellationToken) =>
 {
     var validationError = ChatRequestValidator.Validate(request);
@@ -149,13 +214,43 @@ app.MapPost("/api/chat", async (
         return Results.BadRequest(new { error = validationError });
     }
 
+    var latestUserMessage = request.Messages[^1];
+
     try
     {
-        var response = await ollama.CreateDecisionAsync(
+        var conversation = await conversationStore.GetOrCreateConversationAsync(
+            request.ConversationId,
+            latestUserMessage.Content,
+            cancellationToken);
+
+        await conversationStore.AddUserMessageAsync(
+            conversation.Id,
+            latestUserMessage.Content,
+            cancellationToken);
+
+        var ollamaResult = await ollama.CreateDecisionAsync(
             request.Messages,
             cancellationToken);
 
-        return Results.Ok(response);
+        var assistantMessage = await conversationStore.AddAssistantMessageAsync(
+            conversation.Id,
+            ollamaResult.Decision,
+            cancellationToken);
+
+        await conversationStore.SaveLlmTelemetryAsync(
+            assistantMessage.Id,
+            ollamaResult.Telemetry,
+            cancellationToken);
+
+        return Results.Ok(new AvatarChatResponse(
+            conversation.Id,
+            assistantMessage.Id,
+            ollamaResult.Decision,
+            ollamaResult.Telemetry));
+    }
+    catch (KeyNotFoundException exception)
+    {
+        return Results.NotFound(new { error = exception.Message });
     }
     catch (HttpRequestException exception)
     {

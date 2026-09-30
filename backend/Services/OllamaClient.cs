@@ -1,4 +1,4 @@
-// This file calls local Ollama with Qwen 4B, constrains output with JSON Schema, parses inference telemetry, and returns a validated avatar decision.
+// This file calls local Ollama with Qwen 4B, constrains output with JSON Schema, parses inference telemetry, and returns a validated internal decision result.
 using System.Net.Http.Json;
 using System.Text.Json;
 using AiAvatar.Backend.Models;
@@ -73,7 +73,7 @@ public sealed class OllamaClient
         _character = character.Value;
     }
 
-    public async Task<AvatarChatResponse> CreateDecisionAsync(
+    public async Task<OllamaDecisionResult> CreateDecisionAsync(
         IReadOnlyList<ChatMessage> messages,
         CancellationToken cancellationToken)
     {
@@ -159,7 +159,7 @@ public sealed class OllamaClient
             var fallback = AvatarMotionPolicy.Apply(
                 AvatarDecisionValidator.Fallback("The local model returned an empty response."));
 
-            return new AvatarChatResponse(fallback, telemetry);
+            return new OllamaDecisionResult(fallback, telemetry);
         }
 
         try
@@ -170,7 +170,7 @@ public sealed class OllamaClient
 
             var validated = AvatarDecisionValidator.Sanitize(rawDecision);
             var animated = AvatarMotionPolicy.Apply(validated);
-            return new AvatarChatResponse(animated, telemetry);
+            return new OllamaDecisionResult(animated, telemetry);
         }
         catch (JsonException)
         {
@@ -178,7 +178,7 @@ public sealed class OllamaClient
                 AvatarDecisionValidator.Fallback(
                     "The local model answered, but its avatar-control JSON was invalid."));
 
-            return new AvatarChatResponse(fallback, telemetry);
+            return new OllamaDecisionResult(fallback, telemetry);
         }
     }
 

@@ -1,4 +1,4 @@
-# This file excludes generated build output, local environment files, IDE folders, dependency caches, model weights, and private voice data from source control.
+# This file excludes generated build output, local environment files, IDE folders, dependency caches, model weights, private voice data, and runtime SQLite files from source control.
 frontend/node_modules/
 frontend/.next/
 frontend/out/
@@ -6,6 +6,10 @@ frontend/.env.local
 frontend/tsconfig.tsbuildinfo
 backend/bin/
 backend/obj/
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal
+backend/data/audio/
 .vs/
 .vscode/
 .idea/

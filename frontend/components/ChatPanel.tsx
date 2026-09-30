@@ -41,6 +41,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [decision, setDecision] = useState<AvatarDecision>(INITIAL_DECISION);
   const [telemetry, setTelemetry] = useState<ModelTelemetry | null>(null);
@@ -116,6 +117,7 @@ export function ChatPanel() {
 
     try {
       const response = await sendChatRequest({
+        conversationId,
         // Keep the local 4B context intentionally short so response latency stays predictable.
         messages: nextMessages.slice(-12),
       });
@@ -125,6 +127,7 @@ export function ChatPanel() {
         content: response.decision.speech,
       };
 
+      setConversationId(response.conversationId);
       setMessages((current) => [...current, assistantMessage]);
       setDecision(response.decision);
       setTelemetry(response.telemetry);
@@ -138,6 +141,7 @@ export function ChatPanel() {
 
       try {
         await speak({
+          messageId: response.assistantMessageId,
           text: response.decision.speech,
           emotion: response.decision.emotion,
           emotionIntensity: response.decision.emotionIntensity,
@@ -190,6 +194,7 @@ export function ChatPanel() {
     clearSpeech();
     clearNeutralResetTimer();
     setMessages(INITIAL_MESSAGES);
+    setConversationId(null);
     setInput("");
     setDecision(INITIAL_DECISION);
     setTelemetry(null);

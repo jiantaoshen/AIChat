@@ -31,22 +31,52 @@ function Test-OllamaServer {
     }
 }
 
+function Start-OllamaWindowsApp {
+    $ollamaCommand = Get-Command "ollama" -ErrorAction SilentlyContinue
+    if ($null -eq $ollamaCommand) {
+        return $false
+    }
+
+    $ollamaExe = $ollamaCommand.Source
+    $ollamaDir = Split-Path -Parent $ollamaExe
+
+    $appCandidates = @(
+        (Join-Path $ollamaDir "ollama app.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama app.exe"),
+        (Join-Path $env:LOCALAPPDATA "Ollama\ollama app.exe"),
+        (Join-Path $env:ProgramFiles "Ollama\ollama app.exe")
+    ) | Select-Object -Unique
+
+    foreach ($appExe in $appCandidates) {
+        if (-not [string]::IsNullOrWhiteSpace($appExe) -and (Test-Path $appExe)) {
+            Start-Process -FilePath $appExe -ArgumentList @("--hide", "--fast-startup") -WindowStyle Hidden | Out-Null
+            return $true
+        }
+    }
+
+    Start-Process -FilePath $ollamaExe -ArgumentList @("serve") -WindowStyle Hidden | Out-Null
+    return $true
+}
+
 function Ensure-OllamaServer {
     if (Test-OllamaServer) {
         return
     }
 
-    Write-Host "Starting local Ollama server..." -ForegroundColor Cyan
-    Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Minimized | Out-Null
+    Write-Host "Starting Ollama Windows app..." -ForegroundColor Cyan
 
-    for ($attempt = 0; $attempt -lt 20; $attempt++) {
-        Start-Sleep -Seconds 1
+    if (-not (Start-OllamaWindowsApp)) {
+        throw "Could not locate the Ollama Windows application."
+    }
+
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
         if (Test-OllamaServer) {
             return
         }
+        Start-Sleep -Seconds 1
     }
 
-    throw "Ollama did not become reachable at http://localhost:11434. Open Ollama manually and retry."
+    throw "Ollama did not become reachable at http://localhost:11434. Open the Ollama Windows app and retry."
 }
 
 function Get-VersionFromText {

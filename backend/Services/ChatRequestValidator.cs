@@ -5,7 +5,6 @@ namespace AiAvatar.Backend.Services;
 
 public static class ChatRequestValidator
 {
-    private const int MaxMessages = 40;
     private const int MaxCharactersPerMessage = 4_000;
 
     public static string? Validate(ChatRequest? request)
@@ -20,10 +19,6 @@ public static class ChatRequestValidator
             return "ConversationId must be null or a non-empty GUID.";
         }
 
-        if (request.Messages.Count > MaxMessages)
-        {
-            return $"This MVP accepts at most {MaxMessages} messages per request.";
-        }
 
         foreach (var message in request.Messages)
         {

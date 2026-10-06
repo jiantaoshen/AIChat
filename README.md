@@ -153,14 +153,12 @@ If the project later becomes a remote multi-user service, PostgreSQL would be a 
 
 The ASP.NET Core backend uses Entity Framework Core as the persistence layer instead of writing SQL directly throughout the application.
 
-Database access is kept behind application services so avatar and AI logic do not depend directly on SQLite.
+Database access is kept behind `ConversationStore` so avatar, Ollama, and speech logic do not depend directly on SQLite.
 
 Conceptually:
 
 ```text
-API
- ↓
-Application Service
+API Endpoint
  ↓
 ConversationStore
  ↓
@@ -186,6 +184,8 @@ A small local model is useful for experimenting with constrained structured outp
 The current architecture also makes it possible to compare smaller and larger models without changing the rest of the avatar system.
 
 Ollama provides the local model runtime and HTTP API while ASP.NET Core owns application-level validation and telemetry.
+
+The server-side `OllamaRequestFactory` owns request construction and the conversation window sent to the model. The frontend sends the active conversation without duplicating model-context limits.
 
 ## Why I used CosyVoice3
 
@@ -305,8 +305,8 @@ different prompt configurations
 The UI architecture separates responsibilities across three layers:
 
 - shadcn/ui and Base UI provide UI primitives
-- Tailwind CSS handles component styling and local layout
-- CSS variables define shared design and responsive tokens
+- Tailwind CSS handles component styling and layout
+- native CSS handles avatar composition, animation, and shared visual behavior
 
 Native CSS is kept for cases where it is clearer than utility classes, such as:
 
@@ -317,51 +317,51 @@ Native CSS is kept for cases where it is clearer than utility classes, such as:
 - character composition
 - runtime motion variables
 
+The project intentionally keeps Tailwind classes compact and avoids a large responsive-token layer.
+
 Shared UI logic follows the DRY (Don't Repeat Yourself) principle by keeping genuinely shared knowledge[^1] and behavior[^2] in a single source of truth.
 
 Generic UI primitives do not know about Qwen, avatar emotions, gestures, CosyVoice, or SQLite.
 
 ## Responsive Design
 
-The avatar interface uses a media-query-driven responsive system built around shared CSS design tokens.
+The current interface uses a deliberately simple responsive strategy focused on predictable Full HD desktop behavior.
 
-Components consume responsive sizing and layout variables instead of depending directly on viewport breakpoints.
+Components use straightforward Tailwind breakpoint utilities instead of a large system of shared responsive sizing tokens.
 
 For example:
 
 ```text
 Viewport
     ↓
-CSS media queries
+Tailwind breakpoint utilities
     ↓
-responsive token overrides
-    ↓
-components consume shared tokens
+page grid / composer layout / typography adjustments
 ```
 
-Larger breakpoints introduce targeted layout improvements rather than globally scaling the interface.
+At Full HD desktop widths, the main page keeps a large avatar area beside a fixed-width telemetry sidebar.
+
+On narrower screens, the layout stacks naturally instead of trying to proportionally scale the whole interface.
+
+The telemetry sidebar can scroll vertically when available height is limited.
 
 The project avoids page-level:
 
 ```text
 zoom
 transform: scale(...)
-whole-page scaling
+clamp()-driven whole-page sizing
+complex responsive token systems
 ```
 
-Instead, individual elements adapt independently:
+Instead, only the layout pieces that need adaptation use simple breakpoint rules:
 
-- page gutter
-- sidebar width
-- stage layout
-- avatar composition
-- dialogue width
-- input dimensions
-- telemetry columns
-- modal dimensions
-- typography
+- main page columns
+- avatar stage minimum height
+- input and send-button layout
+- dialogue typography
 
-This keeps the visual-novel interface readable across phones, tablets, laptops, Full HD, QHD, ultrawide, and larger displays.
+The current priority is a clear and stable Full HD desktop layout, with a reasonable stacked fallback for smaller screens rather than exhaustive tuning for every viewport size.
 
 [^1]: Knowledge: shared rules, definitions, configuration, and facts that the system needs to know.
 [^2]: Behavior: reusable logic or processing that the system performs.
@@ -441,31 +441,64 @@ Speech synthesis is treated as an enhancement layer rather than a dependency for
 ```text
 frontend/
 ├─ app/
+│  ├─ globals.css
+│  ├─ layout.tsx
+│  └─ page.tsx
 ├─ components/
 │  ├─ ui/
 │  ├─ AvatarStage.tsx
-│  ├─ ChatPanel.tsx
+│  ├─ ChatComposer.tsx
 │  ├─ ChatLogModal.tsx
+│  ├─ ChatPanel.tsx
 │  └─ TelemetrySidebar.tsx
 ├─ hooks/
-│  └─ useAvatarSpeech.ts
+│  ├─ useAvatarSpeech.ts
+│  └─ useChatSession.ts
 ├─ lib/
+│  ├─ api.ts
+│  └─ utils.ts
 └─ types/
+   └─ chat.ts
 
 backend/
 ├─ Data/
 │  ├─ AvatarDbContext.cs
 │  └─ Entities/
+├─ Endpoints/
+│  ├─ ChatEndpoints.cs
+│  ├─ HealthEndpoints.cs
+│  └─ SpeechEndpoints.cs
 ├─ Migrations/
 ├─ Models/
 ├─ Options/
 ├─ Services/
+│  ├─ Ollama/
+│  │  ├─ AvatarDecisionSchema.cs
+│  │  ├─ OllamaClient.cs
+│  │  ├─ OllamaRequestFactory.cs
+│  │  └─ OllamaResponseParser.cs
 │  ├─ Persistence/
-│  └─ Speech/
+│  ├─ Speech/
+│  ├─ AvatarDecisionValidator.cs
+│  ├─ AvatarMotionPolicy.cs
+│  ├─ AvatarSystemPrompt.cs
+│  └─ ChatRequestValidator.cs
 ├─ data/
 │  └─ avatar.db
 ├─ Program.cs
 └─ appsettings.json
+
+scripts/
+├─ run-dev.ps1
+├─ setup.ps1
+├─ setup-cosyvoice.ps1
+└─ verify.ps1
+
+RUN_WINDOWS.cmd
+SETUP_WINDOWS.cmd
+VERIFY_WINDOWS.cmd
+RUN_COSYVOICE_WINDOWS.cmd
+SETUP_COSYVOICE_WINDOWS.cmd
 
 tools/
 ├─ cosyvoice/
@@ -491,12 +524,6 @@ Git
 Ollama
 ```
 
-Pull the Qwen model:
-
-```powershell
-ollama pull qwen3:4b-instruct-2507-q4_K_M
-```
-
 Install CosyVoice:
 
 ```powershell
@@ -509,11 +536,27 @@ Install the project:
 .\SETUP_WINDOWS.cmd
 ```
 
+The setup script checks the required local tools, starts Ollama when necessary, pulls the configured Qwen model if it is missing, restores the .NET backend, installs frontend dependencies, and runs the frontend checks.
+
+The configured Qwen model can also be pulled manually:
+
+```powershell
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+```
+
 Run:
 
 ```powershell
 .\RUN_WINDOWS.cmd
 ```
+
+`RUN_WINDOWS.cmd` is the Windows entry point and delegates the development startup logic to `scripts/run-dev.ps1`.
+
+The startup script attempts to start the Ollama Windows application without blocking indefinitely, then starts the ASP.NET Core backend and Next.js frontend.
+
+The backend starts the configured CosyVoice service automatically when local TTS is enabled.
+
+If Ollama is not ready within the short startup window, backend and frontend startup still continues so the project does not remain stuck at the Ollama launch step.
 
 Local services:
 
@@ -563,24 +606,6 @@ SELECT *
 FROM TtsTelemetry
 ORDER BY CreatedAtUtc DESC;
 ```
-
-## Current Scope
-
-Currently included:
-
-- keyboard text input
-- local Qwen inference
-- structured emotion and gesture output
-- deterministic avatar motion policy
-- local CosyVoice3 TTS
-- reference voice support
-- replay voice
-- conversation log
-- SQLite conversation persistence
-- SQLite message persistence
-- LLM telemetry persistence
-- TTS telemetry persistence
-- responsive visual-novel UI
 
 ## Design Principle
 

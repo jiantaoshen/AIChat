@@ -1,4 +1,4 @@
-// This file sanitizes Qwen output so only supported expressions, gestures, text, and safe intensity values reach the renderer.
+// This file sanitizes Qwen output so only supported expressions, gestures, text, language metadata, and safe intensity values reach the renderer.
 using AiAvatar.Backend.Models;
 
 namespace AiAvatar.Backend.Services;
@@ -41,6 +41,7 @@ public static class AvatarDecisionValidator
 
         return new AvatarDecision(
             speech,
+            NormalizeLanguage(decision.Language),
             NormalizeChoice(decision.Emotion, AllowedEmotions, "neutral"),
             Clamp01(decision.EmotionIntensity),
             NormalizeChoice(decision.Gesture, AllowedGestures, "none"),
@@ -50,10 +51,27 @@ public static class AvatarDecisionValidator
     public static AvatarDecision Fallback(string message) =>
         new(
             message,
+            "en",
             "confused",
             0.45,
             "none",
             0.0);
+
+    private static string NormalizeLanguage(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "und";
+        }
+
+        var normalized = value.Trim().ToLowerInvariant().Replace('_', '-');
+        var separatorIndex = normalized.IndexOf('-');
+        var baseCode = separatorIndex >= 0 ? normalized[..separatorIndex] : normalized;
+
+        return baseCode.Length is >= 2 and <= 3 && baseCode.All(char.IsLetter)
+            ? baseCode
+            : "und";
+    }
 
     private static string NormalizeChoice(
         string? value,

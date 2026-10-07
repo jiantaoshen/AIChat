@@ -77,7 +77,7 @@ export function TelemetrySidebar({
             variant={stateBadgeVariant(operationalState)}
             className="capitalize"
           >
-            {operationalState}
+            {formatOperationalState(operationalState)}
           </Badge>
         </div>
       </CardHeader>
@@ -109,8 +109,12 @@ export function TelemetrySidebar({
           <TelemetryItem
             icon={<AudioLinesIcon className="size-4" />}
             label="Voice"
-            value={ttsState}
-            detail="local CosyVoice3"
+            value={formatVoiceState(ttsState)}
+            detail={
+              ttsState === "unsupported"
+                ? "language not supported by CosyVoice3"
+                : "local CosyVoice3"
+            }
           />
           <TelemetryItem
             icon={<MessageSquareTextIcon className="size-4" />}
@@ -202,6 +206,14 @@ function TelemetryItem({
   );
 }
 
+function formatVoiceState(state: SpeechPlaybackState): string {
+  return state === "unsupported" ? "Unsupported language" : state;
+}
+
+function formatOperationalState(state: OperationalState): string {
+  return state === "unsupported" ? "Unsupported language" : state;
+}
+
 function formatDuration(durationMs: number | null | undefined): string {
   return durationMs == null ? "—" : `${(durationMs / 1000).toFixed(2)} s`;
 }
@@ -214,6 +226,8 @@ function stateBadgeVariant(
     case "synthesizing":
     case "speaking":
       return "secondary";
+    case "unsupported":
+      return "outline";
     case "error":
       return "destructive";
     default:

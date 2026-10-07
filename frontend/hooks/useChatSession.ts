@@ -18,6 +18,7 @@ type ChatState = "idle" | "thinking" | "error";
 
 const INITIAL_DECISION: AvatarDecision = {
   speech: "",
+  language: "zh",
   emotion: "neutral",
   emotionIntensity: 0.22,
   gesture: "none",
@@ -131,9 +132,10 @@ export function useChatSession() {
       }
 
       try {
-        await speak({
+        const speechResult = await speak({
           messageId: response.assistantMessageId,
           text: response.decision.speech,
+          language: response.decision.language,
           emotion: response.decision.emotion,
           emotionIntensity: response.decision.emotionIntensity,
         });
@@ -142,7 +144,12 @@ export function useChatSession() {
           return;
         }
 
-        scheduleNeutralReset(response.decision, EXPRESSION_HOLD_AFTER_SPEECH_MS);
+        scheduleNeutralReset(
+          response.decision,
+          speechResult === "completed"
+            ? EXPRESSION_HOLD_AFTER_SPEECH_MS
+            : EXPRESSION_HOLD_WITHOUT_TTS_MS,
+        );
       } catch {
         // A TTS failure must not discard a successful text response.
         if (turnGeneration !== turnGenerationRef.current) {
@@ -160,6 +167,7 @@ export function useChatSession() {
         caught instanceof Error ? caught.message : "Unknown local-model error.";
       const fallbackDecision: AvatarDecision = {
         speech: "",
+        language: "en",
         emotion: "confused",
         emotionIntensity: 0.5,
         gesture: "none",

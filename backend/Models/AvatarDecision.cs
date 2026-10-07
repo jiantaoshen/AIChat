@@ -3,6 +3,7 @@ namespace AiAvatar.Backend.Models;
 
 public sealed record AvatarDecision(
     string Speech,
+    string Language,
     string Emotion,
     double EmotionIntensity,
     string Gesture,

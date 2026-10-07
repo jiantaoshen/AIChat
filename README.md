@@ -8,7 +8,7 @@ The project uses a local Qwen model for dialogue and semantic avatar decisions, 
 
 The LLM is responsible for semantic decisions such as what to say, what emotion to express, and what gesture to request. Deterministic C# code remains responsible for validation, application state, persistence, animation policy, timing, and TTS control.
 
-The current version uses keyboard text input and local speech output. No cloud API key is required for the main runtime path.
+The current version uses keyboard text input and local speech output for CosyVoice3-supported languages. Unsupported speech languages remain available as text without invoking TTS. No cloud API key is required for the main runtime path.
 
 ![AI Avatar UI](assets/avatar-ui.png)
 
@@ -80,6 +80,7 @@ Instead, Qwen returns a structured semantic decision:
 ```json
 {
   "speech": "你好。今天想聊些什么？",
+  "language": "zh",
   "emotion": "happy",
   "emotionIntensity": 0.65,
   "gesture": "nod",
@@ -87,7 +88,7 @@ Instead, Qwen returns a structured semantic decision:
 }
 ```
 
-C# validates the result and converts it into deterministic application behavior.
+C# validates the result, normalizes the language code, and converts the decision into deterministic application behavior.
 
 For example:
 
@@ -204,21 +205,42 @@ tools/cosyvoice/voice/reference.wav
 tools/cosyvoice/voice/reference.txt
 ```
 
-Qwen does not directly choose unrestricted TTS parameters.
+Qwen returns the language of each assistant response as a normalized ISO 639-1 code together with the semantic avatar decision.
+
+The current speech path allows:
+
+```text
+zh / en / ja / ko / de / es / fr / it / ru
+```
+
+If the response language is not supported by the current CosyVoice3 speech path, such as Swedish (`sv`), the frontend does not send a synthesis request.
 
 Instead:
 
 ```text
-Qwen emotion
+Qwen speech + language
      ↓
-C# TTS policy
+C# validation
      ↓
-bounded voice instruction
-     ↓
-CosyVoice3
-     ↓
-WAV
+frontend speech policy
+     ├─ supported language
+     │       ↓
+     │   synthesizing
+     │       ↓
+     │   CosyVoice3
+     │       ↓
+     │      WAV
+     │
+     └─ unsupported language
+             ↓
+        unsupported
+             ↓
+        text only
 ```
+
+The `unsupported` speech state is informational rather than an error. The avatar speech status and the telemetry sidebar both show `Unsupported language`, and both return to the normal state when the next user message begins.
+
+Qwen does not directly choose unrestricted TTS parameters. For supported languages, emotion still passes through the bounded C# TTS policy before synthesis.
 
 The current project keeps the full CosyVoice runtime dependency path rather than maintaining a custom dependency-pruned environment, because some upstream packages are imported indirectly during model initialization.
 
@@ -385,18 +407,24 @@ Ollama
 Qwen 4B
         ↓
 Structured Avatar Decision
+speech + language + emotion + gesture
         ↓
 C# Validation
         ├─ Motion Policy
         ├─ Persistence
         └─ TTS Policy
-              ↓
-          CosyVoice3
-              ↓
-             WAV
-              ↓
-       Browser Audio
-              ↓
+              ├─ supported language
+              │       ↓
+              │   CosyVoice3
+              │       ↓
+              │      WAV
+              │       ↓
+              │ Browser Audio
+              │
+              └─ unsupported language
+                      ↓
+                 text only
+        ↓
 Avatar UI + expression + gesture
 ```
 
@@ -413,24 +441,37 @@ thinking
  ↓
 Qwen
  ↓
-Assistant message
+Assistant message + language
  ↓
 SQLite + LLM telemetry
  ↓
-synthesizing
- ↓
-CosyVoice3
- ↓
-SQLite + TTS telemetry
- ↓
-speaking
- ↓
-audio playback ends
+speech language check
+ ├─ supported
+ │      ↓
+ │ synthesizing
+ │      ↓
+ │ CosyVoice3
+ │      ↓
+ │ SQLite + TTS telemetry
+ │      ↓
+ │ speaking
+ │      ↓
+ │ audio playback ends
+ │
+ └─ unsupported
+        ↓
+   Unsupported language
+        ↓
+      text only
  ↓
 short expression hold
  ↓
 neutral / idle
 ```
+
+While speech is synthesizing or playing, the composer remains available. Sending the next user message stops the current speech and immediately starts the next conversation turn. Sending remains blocked only while the LLM is still generating the current text response.
+
+For an unsupported speech language, no CosyVoice3 request is made. The avatar speech status and the right-side Voice status both display `Unsupported language` until the next user message resets the shared speech state.
 
 If TTS fails, the text response remains available.
 

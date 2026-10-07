@@ -28,6 +28,10 @@ export function ChatPanel() {
             value={chat.input}
             canSend={chat.canSend}
             isThinking={chat.operationalState === "thinking"}
+            isSpeechActive={
+              chat.speechState === "synthesizing" ||
+              chat.speechState === "speaking"
+            }
             onChange={chat.setInput}
             onSend={() => void chat.sendMessage()}
           />

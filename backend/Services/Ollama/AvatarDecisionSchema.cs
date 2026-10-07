@@ -1,4 +1,4 @@
-// This file defines the JSON Schema sent to Ollama so Qwen can only return the supported speech, emotion, gesture, and intensity fields.
+// This file defines the JSON Schema sent to Ollama so Qwen can only return the supported speech, language, emotion, gesture, and intensity fields.
 namespace AiAvatar.Backend.Services.Ollama;
 
 public static class AvatarDecisionSchema
@@ -12,6 +12,11 @@ public static class AvatarDecisionSchema
             {
                 type = "string",
                 description = "The short natural-language reply spoken to the user."
+            },
+            language = new
+            {
+                type = "string",
+                description = "The lowercase ISO 639-1 language code of the speech reply, for example zh, en, sv, ja, de, or fr. Use und only when genuinely uncertain."
             },
             emotion = new
             {
@@ -39,6 +44,7 @@ public static class AvatarDecisionSchema
         required = new[]
         {
             "speech",
+            "language",
             "emotion",
             "emotionIntensity",
             "gesture",

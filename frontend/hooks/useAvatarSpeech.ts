@@ -1,15 +1,40 @@
-// This file synthesizes assistant replies with local CosyVoice, plays the returned WAV in the browser, exposes speaking state, and keeps a replayable copy of the latest utterance.
+// This file synthesizes supported assistant replies with local CosyVoice, plays the returned WAV in the browser, exposes speaking/unsupported state, and keeps a replayable copy of the latest utterance.
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { synthesizeSpeech } from "@/lib/api";
 import type { SpeechSynthesisRequest } from "@/types/chat";
 
-export type SpeechPlaybackState = "idle" | "synthesizing" | "speaking";
+export type SpeechPlaybackState =
+  | "idle"
+  | "synthesizing"
+  | "speaking"
+  | "unsupported";
+
+export type SpeechPlaybackResult =
+  | "completed"
+  | "unsupported"
+  | "interrupted";
+
+interface AvatarSpeechRequest extends SpeechSynthesisRequest {
+  language: string;
+}
 
 interface UseAvatarSpeechOptions {
   onError?: (message: string) => void;
 }
+
+const COSYVOICE_SUPPORTED_LANGUAGES = new Set([
+  "zh",
+  "en",
+  "ja",
+  "ko",
+  "de",
+  "es",
+  "fr",
+  "it",
+  "ru",
+]);
 
 export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
   const [speechState, setSpeechState] = useState<SpeechPlaybackState>("idle");
@@ -105,26 +130,40 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
   }, [finishPlayback]);
 
   const speak = useCallback(
-    async (request: SpeechSynthesisRequest): Promise<void> => {
+    async (request: AvatarSpeechRequest): Promise<SpeechPlaybackResult> => {
       stopSpeech();
+
+      const language = normalizeLanguageCode(request.language);
+      if (!COSYVOICE_SUPPORTED_LANGUAGES.has(language)) {
+        setSpeechState("unsupported");
+        return "unsupported";
+      }
+
       const generation = generationRef.current;
       const controller = new AbortController();
       abortRef.current = controller;
       setSpeechState("synthesizing");
 
       try {
-        const blob = await synthesizeSpeech(request, controller.signal);
+        const speechRequest: SpeechSynthesisRequest = {
+          messageId: request.messageId,
+          text: request.text,
+          emotion: request.emotion,
+          emotionIntensity: request.emotionIntensity,
+        };
+        const blob = await synthesizeSpeech(speechRequest, controller.signal);
 
         if (generation !== generationRef.current) {
-          return;
+          return "interrupted";
         }
 
         abortRef.current = null;
         replaceAudioUrl(blob);
         await playCurrentUrl();
+        return "completed";
       } catch (caught) {
         if (controller.signal.aborted) {
-          return;
+          return "interrupted";
         }
 
         setSpeechState("idle");
@@ -180,4 +219,8 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
     stopSpeech,
     clearSpeech,
   };
+}
+
+function normalizeLanguageCode(language: string): string {
+  return language.trim().toLowerCase().replace("_", "-").split("-", 1)[0];
 }

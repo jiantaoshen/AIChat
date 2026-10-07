@@ -55,12 +55,25 @@ export function AvatarStage({
 
   const isThinking = operationalState === "thinking";
   const isSpeaking = operationalState === "speaking";
-  const hasOperationalOverride = ["thinking", "synthesizing", "speaking"].includes(
-    operationalState,
-  );
+  const hasOperationalOverride = [
+    "thinking",
+    "synthesizing",
+    "speaking",
+    "unsupported",
+  ].includes(operationalState);
   const sprite = isThinking ? thinkingSprite : spriteByEmotion[emotion];
-  const visibleState = hasOperationalOverride ? operationalState : emotion;
-  const activeGesture = operationalState === "idle" || isSpeaking ? gesture : "none";
+  const visibleState =
+    operationalState === "unsupported"
+      ? "unsupported language"
+      : hasOperationalOverride
+        ? operationalState
+        : emotion;
+  const activeGesture =
+    operationalState === "idle" ||
+    operationalState === "unsupported" ||
+    isSpeaking
+      ? gesture
+      : "none";
   const motionClass = isThinking
     ? "avatar-thinking"
     : gestureClassByGesture[activeGesture];

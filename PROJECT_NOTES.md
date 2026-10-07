@@ -34,6 +34,35 @@ Next.js
 → conversation log
 ```
 
+Code ownership after the readability refactor:
+
+```text
+frontend/components/ChatPanel.tsx
+→ page composition only
+
+frontend/components/ChatComposer.tsx
+→ text input + send UI only
+
+frontend/hooks/useChatSession.ts
+→ browser session workflow, TTS, replay, errors, avatar timing
+
+backend/Endpoints/*
+→ HTTP route behavior
+
+backend/Services/Ollama/OllamaRequestFactory.cs
+→ Ollama payload + the single 12-message model-context window
+
+backend/Services/Ollama/OllamaResponseParser.cs
+→ Ollama envelope + avatar JSON + telemetry parsing
+
+backend/Services/Ollama/OllamaClient.cs
+→ Ollama HTTP transport/status only
+```
+
+The frontend intentionally sends the current session history without applying its own model-context slice. The backend is the single owner of the Qwen context-window policy.
+
+The UI is intentionally tuned with straightforward Tailwind classes for a Full HD desktop target instead of a large responsive token/clamp system.
+
 Current operational states:
 
 ```text

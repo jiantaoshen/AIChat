@@ -11,6 +11,7 @@ interface ChatComposerProps {
   value: string;
   canSend: boolean;
   isThinking: boolean;
+  isSpeechActive: boolean;
   onChange: (value: string) => void;
   onSend: () => void;
 }
@@ -19,6 +20,7 @@ export function ChatComposer({
   value,
   canSend,
   isThinking,
+  isSpeechActive,
   onChange,
   onSend,
 }: ChatComposerProps) {
@@ -64,6 +66,11 @@ export function ChatComposer({
               <>
                 <LoaderCircleIcon data-icon="inline-start" className="animate-spin" />
                 Thinking
+              </>
+            ) : isSpeechActive ? (
+              <>
+                <SendIcon data-icon="inline-start" />
+                Interrupt &amp; Send
               </>
             ) : (
               <>

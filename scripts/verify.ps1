@@ -4,6 +4,7 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $backendDir = Join-Path $projectRoot "backend"
 $frontendDir = Join-Path $projectRoot "frontend"
+$frontendLock = Join-Path $frontendDir "package-lock.json"
 
 Write-Host "Building ASP.NET Core 10 backend..." -ForegroundColor Cyan
 Push-Location $backendDir
@@ -21,10 +22,13 @@ finally {
 Write-Host "Checking Next.js 16 frontend..." -ForegroundColor Cyan
 Push-Location $frontendDir
 try {
-    if (-not (Test-Path "node_modules")) {
-        & npm install
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+    if (-not (Test-Path $frontendLock)) {
+        throw "package-lock.json is required for reproducible frontend verification."
     }
+
+    Write-Host "Installing frontend dependencies exactly from package-lock.json with npm ci..." -ForegroundColor Cyan
+    & npm ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed." }
 
     & npm run typecheck
     if ($LASTEXITCODE -ne 0) { throw "TypeScript typecheck failed." }

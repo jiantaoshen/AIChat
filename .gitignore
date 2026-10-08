@@ -18,6 +18,10 @@ backend/data/audio/
 .DS_Store
 Thumbs.db
 
+# Python bytecode and interpreter caches.
+__pycache__/
+*.py[cod]
+
 # Local CosyVoice Python venv, repository, generated requirements, model weights, and private/reference voice data created by SETUP_COSYVOICE_WINDOWS.cmd.
 tools/cosyvoice/.venv/
 tools/cosyvoice/requirements-windows-venv.txt

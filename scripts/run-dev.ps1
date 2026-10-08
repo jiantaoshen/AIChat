@@ -96,6 +96,7 @@ $backendDir = Join-Path $projectRoot "backend"
 $frontendDir = Join-Path $projectRoot "frontend"
 $frontendEnv = Join-Path $frontendDir ".env.local"
 $frontendEnvExample = Join-Path $frontendDir ".env.local.example"
+$frontendLock = Join-Path $frontendDir "package-lock.json"
 
 $ollamaReady = Ensure-OllamaApp
 
@@ -121,11 +122,18 @@ if (-not (Test-Path $frontendEnv)) {
 }
 
 if (-not (Test-Path (Join-Path $frontendDir "node_modules"))) {
-    Write-Host "Frontend dependencies are missing. Running npm install..." -ForegroundColor Yellow
     Push-Location $frontendDir
     try {
-        & npm install
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+        if (Test-Path $frontendLock) {
+            Write-Host "Frontend dependencies are missing. Installing exactly from package-lock.json with npm ci..." -ForegroundColor Yellow
+            & npm ci
+            if ($LASTEXITCODE -ne 0) { throw "npm ci failed." }
+        }
+        else {
+            Write-Host "package-lock.json is missing. Falling back to npm install..." -ForegroundColor Yellow
+            & npm install
+            if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+        }
     }
     finally {
         Pop-Location

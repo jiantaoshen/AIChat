@@ -4,7 +4,7 @@
 
 AI Avatar is a local-first embodied AI project built around a visual-novel-style interface.
 
-The project uses a local Qwen model for dialogue and semantic avatar decisions, CosyVoice3 for local text-to-speech, and SQLite for persistent conversations and runtime telemetry.
+The project uses a local Qwen model for dialogue and semantic avatar decisions, CosyVoice3 for local text-to-speech, and SQLite as the authoritative store for persistent conversations and runtime telemetry.
 
 The LLM is responsible for semantic decisions such as what to say, what emotion to express, and what gesture to request. Deterministic C# code remains responsible for validation, application state, persistence, animation policy, timing, and TTS control.
 
@@ -23,11 +23,17 @@ The system needs to coordinate several independent concerns:
 - avatar gesture
 - local speech synthesis
 - runtime state
-- conversation persistence
+- authoritative conversation persistence
+- atomic and idempotent chat turns
 - inference telemetry
+- async lifecycle isolation
 - responsive UI behavior
 
 Allowing the LLM to directly control low-level animation, application state, database operations, or arbitrary TTS parameters would make the system difficult to validate and debug.
+
+The backend also cannot treat browser-provided conversation history as authoritative application state. The frontend sends only the current user intent, while persisted conversation history is owned by SQLite and reconstructed by ASP.NET Core.
+
+Long-running model and speech requests introduce another class of state problem. Resetting or starting a newer turn must invalidate stale HTTP, TTS, replay, audio, and timer completions so an older async operation cannot overwrite the current browser session.
 
 The goal of this project is
 
@@ -68,7 +74,7 @@ The current runtime is therefore centered around:
 - Qwen -> dialogue and semantic avatar decisions
 - ASP.NET Core -> validation and application control
 - CosyVoice3 -> local speech synthesis
-- SQLite -> conversation and telemetry persistence
+- SQLite -> authoritative conversation and telemetry persistence
 - Next.js -> avatar interface and interaction
 
 ### Semantic LLM control instead of direct avatar control
@@ -127,6 +133,12 @@ The project currently stores:
 - LlmTelemetry
 - TtsTelemetry
 
+SQLite is also the authoritative source of conversation history. The browser does not submit a complete message history to the model path. It sends the target `conversationId`, one stable `turnId`, and the current `message`; ASP.NET Core loads the persisted history from SQLite and constructs the model context on the server.
+
+A completed chat turn is persisted as one database transaction. Conversation creation when required, the user message, the assistant message, its structured avatar fields, and LLM telemetry are committed together. A persistence failure rolls the turn back instead of leaving a partially completed conversation.
+
+`turnId` provides idempotency across retries. If the server already completed a turn but the client did not receive the response, retrying the same logical turn reuses the same identifier and returns the persisted result instead of creating duplicate messages.
+
 SQLite fits the current project because the application is still local-first and normally runs for one user on one machine.
 
 It provides:
@@ -154,12 +166,15 @@ If the project later becomes a remote multi-user service, PostgreSQL would be a 
 
 The ASP.NET Core backend uses Entity Framework Core as the persistence layer instead of writing SQL directly throughout the application.
 
-Database access is kept behind `ConversationStore` so avatar, Ollama, and speech logic do not depend directly on SQLite.
+Database access is kept behind `ConversationStore` so avatar, Ollama, and speech logic do not depend directly on SQLite. `ChatTurnService` owns the application-level chat-turn boundary and coordinates idempotency, server-owned history, Ollama inference, and the final atomic persistence commit.
 
 Conceptually:
 
 ```text
 API Endpoint
+ ↓
+ChatTurnService
+ ├──────────────→ Ollama
  ↓
 ConversationStore
  ↓
@@ -168,7 +183,7 @@ Entity Framework Core
 SQLite
 ```
 
-This keeps persistence concerns separate from Qwen, CosyVoice, and frontend behavior.
+This keeps persistence concerns separate from Qwen, CosyVoice, and frontend behavior while making one chat turn an explicit application operation.
 
 EF Core migrations are also committed to Git, while generated database files are ignored.
 
@@ -184,9 +199,9 @@ A small local model is useful for experimenting with constrained structured outp
 
 The current architecture also makes it possible to compare smaller and larger models without changing the rest of the avatar system.
 
-Ollama provides the local model runtime and HTTP API while ASP.NET Core owns application-level validation and telemetry.
+Ollama provides the local model runtime and HTTP API while ASP.NET Core owns application-level validation, conversation state, persistence, and telemetry.
 
-The server-side `OllamaRequestFactory` owns request construction and the conversation window sent to the model. The frontend sends the active conversation without duplicating model-context limits.
+The server-side `OllamaRequestFactory` owns request construction and the model-context limit. For an existing conversation, ASP.NET Core loads the recent persisted messages from SQLite, appends the current user message, and sends that server-owned context to Ollama. The frontend therefore does not duplicate context-window policy or provide authoritative conversation history.
 
 ## Why I used CosyVoice3
 
@@ -246,29 +261,58 @@ The current project keeps the full CosyVoice runtime dependency path rather than
 
 ## Conversation Persistence
 
-A new conversation begins without a conversation ID.
+A new browser chat turn contains only the current intent and identity:
+
+```text
+conversationId
+turnId
+message
+```
+
+A new conversation begins with `conversationId = null`. The frontend generates a stable `turnId` for the logical send operation.
 
 ```text
 First user message
        ↓
 conversationId = null
+turnId = new UUID
+message = current text
        ↓
 ASP.NET Core
        ↓
-Create Conversation
+Check whether turnId already completed
        ↓
-Store User Message
+Load persisted conversation history from SQLite
+       ↓
+Append current user message
        ↓
 Qwen
        ↓
-Store Assistant Message
+Validated Avatar Decision
+speech + language + emotion + gesture
+       ↓
+BEGIN SQLite transaction
+       ↓
+Create Conversation when required
+       ↓
+Store User Message + turnId
+       ↓
+Store Assistant Message + turnId + avatar fields
        ↓
 Store LLM Telemetry
        ↓
-Return conversationId
+COMMIT
+       ↓
+Return conversationId + assistantMessageId
 ```
 
-Later messages reuse the same `conversationId`.
+Ollama inference happens before the write transaction. A model failure therefore does not leave a newly created conversation or a user-only partial turn in SQLite, while the database transaction is not held open during a potentially slow model call.
+
+Later messages reuse the same `conversationId`. The backend, rather than the browser, reconstructs the recent conversation window from persisted messages.
+
+Retries reuse the same logical `turnId`. If that turn already exists, the backend validates that the request matches the persisted operation and returns the completed result instead of invoking Qwen and inserting the messages again. The database also has a unique turn/role constraint as the final concurrency safeguard.
+
+The persisted assistant message includes `language`, emotion, gesture, and intensity fields so an idempotent retry can reconstruct the same `AvatarDecision` without calling Qwen again.
 
 Each successful assistant response also receives an `assistantMessageId`.
 
@@ -282,7 +326,7 @@ Assistant Message
      └─ TtsTelemetry
 ```
 
-Resetting the frontend conversation starts a new conversation locally, but does not delete previously persisted SQLite records.
+Resetting the frontend conversation starts a new browser session locally, but does not delete previously persisted SQLite records. Reset also invalidates the previous async session so stale chat, speech, replay, audio, or timer completions cannot restore the old conversation into the new UI state.
 
 ## Telemetry
 
@@ -394,13 +438,14 @@ The current priority is a clear and stable Full HD desktop layout, with a reason
 User keyboard input
         ↓
 Next.js
+message + conversationId + turnId
         ↓
 ASP.NET Core
+        ↓
+ChatTurnService
         ├──────────────────────────────→ SQLite
-        │                                ├─ Conversations
-        │                                ├─ Messages
-        │                                ├─ LlmTelemetry
-        │                                └─ TtsTelemetry
+        │                                ├─ idempotency lookup
+        │                                └─ persisted conversation history
         ↓
 Ollama
         ↓
@@ -410,20 +455,32 @@ Structured Avatar Decision
 speech + language + emotion + gesture
         ↓
 C# Validation
-        ├─ Motion Policy
-        ├─ Persistence
-        └─ TTS Policy
-              ├─ supported language
-              │       ↓
-              │   CosyVoice3
-              │       ↓
-              │      WAV
-              │       ↓
-              │ Browser Audio
-              │
-              └─ unsupported language
-                      ↓
-                 text only
+        ↓
+Atomic persistence transaction
+        ├──────────────────────────────→ SQLite
+        │                                ├─ Conversations
+        │                                ├─ Messages
+        │                                └─ LlmTelemetry
+        ↓
+Next.js session state
+        ├─ reducer
+        ├─ session / turn identity
+        └─ stale async result rejection
+        ↓
+TTS Policy
+        ├─ supported language
+        │       ↓
+        │   CosyVoice3
+        │       ↓
+        │      WAV
+        │       ↓
+        │ Browser Audio
+        │       ↓
+        │ SQLite + TTS telemetry
+        │
+        └─ unsupported language
+                ↓
+           text only
         ↓
 Avatar UI + expression + gesture
 ```
@@ -435,15 +492,25 @@ idle
  ↓
 User message
  ↓
-SQLite
+stop previous speech / clear expression timer
+ ↓
+create or reuse turnId
  ↓
 thinking
  ↓
+POST conversationId + turnId + message
+ ↓
+backend idempotency check
+ ↓
+SQLite persisted history
+ ↓
 Qwen
  ↓
-Assistant message + language
+Assistant decision + language
  ↓
-SQLite + LLM telemetry
+atomic SQLite chat-turn commit
+ ↓
+frontend session / turn identity check
  ↓
 speech language check
  ├─ supported
@@ -464,16 +531,18 @@ speech language check
         ↓
       text only
  ↓
-short expression hold
+identity-aware expression hold
  ↓
 neutral / idle
 ```
 
-While speech is synthesizing or playing, the composer remains available. Sending the next user message stops the current speech and immediately starts the next conversation turn. Sending remains blocked only while the LLM is still generating the current text response.
+Text generation remains single-flight. While speech is synthesizing or playing, the composer remains available; sending the next user message stops the current speech, invalidates the previous turn generation, and immediately starts the next text turn.
 
-For an unsupported speech language, no CosyVoice3 request is made. The avatar speech status and the right-side Voice status both display `Unsupported language` until the next user message resets the shared speech state.
+Reset is a lifecycle boundary rather than only a visual state reset. It increments the browser session identity, aborts the active chat request, clears retry transport state, stops and invalidates speech, clears the neutral-expression timer, and resets reducer-owned session state. Async work that completes after that boundary is ignored when its session or turn identity is stale.
 
-If TTS fails, the text response remains available.
+For an unsupported speech language, no CosyVoice3 synthesis request is made. The avatar speech status and the right-side Voice status display `Unsupported language` until the next user message resets the shared speech state.
+
+If TTS fails, the already successful text response remains available.
 
 Speech synthesis is treated as an enhancement layer rather than a dependency for successful text interaction.
 
@@ -493,8 +562,12 @@ frontend/
 │  ├─ ChatPanel.tsx
 │  └─ TelemetrySidebar.tsx
 ├─ hooks/
+│  ├─ chatSessionState.ts
 │  ├─ useAvatarSpeech.ts
-│  └─ useChatSession.ts
+│  ├─ useChatSession.ts
+│  ├─ useChatSpeechLifecycle.ts
+│  ├─ useChatTurnTransport.ts
+│  └─ useNeutralDecisionTimer.ts
 ├─ lib/
 │  ├─ api.ts
 │  └─ utils.ts
@@ -519,11 +592,15 @@ backend/
 │  │  ├─ OllamaRequestFactory.cs
 │  │  └─ OllamaResponseParser.cs
 │  ├─ Persistence/
+│  │  ├─ ChatTurnConflictException.cs
+│  │  ├─ ConversationStore.cs
+│  │  └─ IConversationStore.cs
 │  ├─ Speech/
 │  ├─ AvatarDecisionValidator.cs
 │  ├─ AvatarMotionPolicy.cs
 │  ├─ AvatarSystemPrompt.cs
-│  └─ ChatRequestValidator.cs
+│  ├─ ChatRequestValidator.cs
+│  └─ ChatTurnService.cs
 ├─ data/
 │  └─ avatar.db
 ├─ Program.cs
@@ -595,7 +672,9 @@ Run:
 
 The startup script attempts to start the Ollama Windows application without blocking indefinitely, then starts the ASP.NET Core backend and Next.js frontend.
 
-The backend starts the configured CosyVoice service automatically when local TTS is enabled.
+The backend starts the configured CosyVoice service automatically when local TTS is enabled. If a process is already listening on the configured CosyVoice port, the backend reuses that process instead of starting another instance.
+
+A stale CosyVoice Python process can therefore survive an earlier development run. One observed symptom was `/health` returning successfully while `/synthesize` immediately returned HTTP 500 with `[Errno 22] Invalid argument`. Restarting Windows cleared the stale local process and restored synthesis. If the same symptom appears again, fully stop the existing CosyVoice/Python process or restart Windows before changing application code.
 
 If Ollama is not ready within the short startup window, backend and frontend startup still continues so the project does not remain stuck at the Ollama launch step.
 
@@ -624,12 +703,23 @@ It can be inspected with tools such as:
 - DB Browser for SQLite
 - VS Code SQLite extensions
 
+`Messages` stores the persisted chat content together with `TurnId`, `Language`, emotion, gesture, and intensity metadata. User and assistant messages from one logical chat turn share a `TurnId`; a filtered unique `(TurnId, Role)` index prevents duplicate user or assistant rows for the same idempotent operation.
+
 Example:
 
 ```sql
 SELECT *
 FROM Messages
 ORDER BY CreatedAtUtc DESC;
+```
+
+Inspect one logical turn:
+
+```sql
+SELECT *
+FROM Messages
+WHERE TurnId = 'your-turn-id'
+ORDER BY CreatedAtUtc;
 ```
 
 LLM telemetry:
@@ -652,4 +742,7 @@ ORDER BY CreatedAtUtc DESC;
 
 > **LLM for semantic decisions. Deterministic code for control.**
 
-The project explores how a small local language model can drive an embodied interface while keeping runtime state, persistence, motion, validation, and speech-generation behavior under deterministic application control.
+The project treats the browser as a source of user intent rather than authoritative conversation state. SQLite owns persisted conversation history, ASP.NET Core owns chat-turn orchestration and validation, and the frontend accepts async results only while their session and turn identity is still current.
+
+The project explores how a small local language model can drive an embodied interface while keeping runtime state, persistence, motion, validation, retry behavior, async lifecycle, and speech-generation behavior under deterministic application control.
+

@@ -135,6 +135,7 @@ if (-not $modelInstalled) {
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $frontendDir = Join-Path $projectRoot "frontend"
+$frontendLock = Join-Path $frontendDir "package-lock.json"
 $backendDir = Join-Path $projectRoot "backend"
 $frontendEnv = Join-Path $frontendDir ".env.local"
 $frontendEnvExample = Join-Path $frontendDir ".env.local.example"
@@ -159,8 +160,15 @@ finally {
 Write-Host "Installing pinned Next.js/Tailwind dependencies..." -ForegroundColor Cyan
 Push-Location $frontendDir
 try {
-    & npm install
-    if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+    if (Test-Path $frontendLock) {
+        & npm ci
+        if ($LASTEXITCODE -ne 0) { throw "npm ci failed." }
+    }
+    else {
+        Write-Host "package-lock.json is missing. Falling back to npm install..." -ForegroundColor Yellow
+        & npm install
+        if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+    }
 
     & npm run typecheck
     if ($LASTEXITCODE -ne 0) { throw "frontend typecheck failed." }

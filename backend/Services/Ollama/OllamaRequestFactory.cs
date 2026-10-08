@@ -9,7 +9,7 @@ namespace AiAvatar.Backend.Services.Ollama;
 
 public sealed class OllamaRequestFactory
 {
-    private const int MaxConversationMessages = 12;
+    internal const int MaxConversationMessages = 12;
 
     private readonly OllamaOptions _ollama;
     private readonly CharacterOptions _character;

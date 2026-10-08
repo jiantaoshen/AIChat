@@ -43,6 +43,36 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
         return conversation;
     }
 
+    public async Task<IReadOnlyList<ChatMessage>> GetRecentMessagesAsync(
+        Guid conversationId,
+        int maxMessages,
+        CancellationToken cancellationToken)
+    {
+        if (maxMessages < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxMessages),
+                "The history limit cannot be negative.");
+        }
+
+        if (maxMessages == 0)
+        {
+            return [];
+        }
+
+        var messages = await db.Messages
+            .AsNoTracking()
+            .Where(item => item.ConversationId == conversationId)
+            .OrderByDescending(item => item.CreatedAtUtc)
+            .ThenByDescending(item => item.Id)
+            .Take(maxMessages)
+            .Select(item => new ChatMessage(item.Role, item.Content))
+            .ToListAsync(cancellationToken);
+
+        messages.Reverse();
+        return messages;
+    }
+
     public async Task<MessageEntity> AddUserMessageAsync(
         Guid conversationId,
         string content,

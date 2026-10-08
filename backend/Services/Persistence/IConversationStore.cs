@@ -11,6 +11,11 @@ public interface IConversationStore
         string firstUserMessage,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<ChatMessage>> GetRecentMessagesAsync(
+        Guid conversationId,
+        int maxMessages,
+        CancellationToken cancellationToken);
+
     Task<MessageEntity> AddUserMessageAsync(
         Guid conversationId,
         string content,

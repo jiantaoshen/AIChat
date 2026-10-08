@@ -1,4 +1,4 @@
-// This endpoint group validates chat input, persists the current turn, asks Ollama for an avatar decision, stores telemetry, and returns the browser response.
+// This endpoint group validates the new user message, rebuilds trusted conversation context from SQLite, persists the current turn, asks Ollama for an avatar decision, stores telemetry, and returns the browser response.
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Services;
 using AiAvatar.Backend.Services.Ollama;
@@ -22,22 +22,31 @@ public static class ChatEndpoints
                 return Results.BadRequest(new { error = validationError });
             }
 
-            var latestUserMessage = request.Messages[^1];
+            var userMessage = request.Message.Trim();
 
             try
             {
                 var conversation = await conversationStore.GetOrCreateConversationAsync(
                     request.ConversationId,
-                    latestUserMessage.Content,
+                    userMessage,
                     cancellationToken);
+
+                var persistedHistory = await conversationStore.GetRecentMessagesAsync(
+                    conversation.Id,
+                    OllamaRequestFactory.MaxConversationMessages - 1,
+                    cancellationToken);
+
+                var modelContext = persistedHistory
+                    .Append(new ChatMessage("user", userMessage))
+                    .ToArray();
 
                 await conversationStore.AddUserMessageAsync(
                     conversation.Id,
-                    latestUserMessage.Content,
+                    userMessage,
                     cancellationToken);
 
                 var ollamaResult = await ollama.CreateDecisionAsync(
-                    request.Messages,
+                    modelContext,
                     cancellationToken);
 
                 var assistantMessage = await conversationStore.AddAssistantMessageAsync(

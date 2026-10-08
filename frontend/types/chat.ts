@@ -14,6 +14,7 @@ export type OperationalState =
   | "thinking"
   | "synthesizing"
   | "speaking"
+  | "unsupported"
   | "error";
 
 export type MessageRole = "user" | "assistant";
@@ -25,6 +26,7 @@ export interface ChatMessage {
 
 export interface AvatarDecision {
   speech: string;
+  language: string;
   emotion: Emotion;
   emotionIntensity: number;
   gesture: Gesture;
@@ -48,6 +50,7 @@ export interface AvatarChatResponse {
 
 export interface ChatRequest {
   conversationId: string | null;
+  turnId: string;
   message: string;
 }
 

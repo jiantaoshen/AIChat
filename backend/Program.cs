@@ -43,6 +43,7 @@ sqliteConnection.ForeignKeys = true;
 builder.Services.AddDbContext<AvatarDbContext>(options =>
     options.UseSqlite(sqliteConnection.ConnectionString));
 builder.Services.AddScoped<IConversationStore, ConversationStore>();
+builder.Services.AddScoped<ChatTurnService>();
 
 builder.Services.AddSingleton<OllamaRequestFactory>();
 builder.Services.AddSingleton<OllamaResponseParser>();

@@ -1,34 +1,27 @@
-// This interface defines deterministic SQLite persistence operations used by chat and TTS endpoints.
-using AiAvatar.Backend.Data.Entities;
+// This interface defines SQLite operations for backend-owned chat history, atomic chat turns, idempotency, and TTS telemetry.
 using AiAvatar.Backend.Models;
 
 namespace AiAvatar.Backend.Services.Persistence;
 
 public interface IConversationStore
 {
-    Task<ConversationEntity> GetOrCreateConversationAsync(
-        Guid? conversationId,
-        string firstUserMessage,
+    Task<AvatarChatResponse?> TryGetCompletedTurnAsync(
+        Guid turnId,
+        Guid? requestedConversationId,
+        string userMessage,
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<ChatMessage>> GetRecentMessagesAsync(
-        Guid conversationId,
+    Task<IReadOnlyList<ChatMessage>> BuildModelContextAsync(
+        Guid? conversationId,
+        string currentUserMessage,
         int maxMessages,
         CancellationToken cancellationToken);
 
-    Task<MessageEntity> AddUserMessageAsync(
-        Guid conversationId,
-        string content,
-        CancellationToken cancellationToken);
-
-    Task<MessageEntity> AddAssistantMessageAsync(
-        Guid conversationId,
-        AvatarDecision decision,
-        CancellationToken cancellationToken);
-
-    Task SaveLlmTelemetryAsync(
-        Guid messageId,
-        ModelTelemetry telemetry,
+    Task<AvatarChatResponse> CommitTurnAsync(
+        Guid? conversationId,
+        Guid turnId,
+        string userMessage,
+        OllamaDecisionResult ollamaResult,
         CancellationToken cancellationToken);
 
     Task<bool> AssistantMessageExistsAsync(

@@ -1,4 +1,4 @@
-// This service persists local conversations, messages, Qwen telemetry, and CosyVoice telemetry through EF Core SQLite.
+// This service owns backend conversation history and atomically persists completed chat turns plus speech telemetry through EF Core SQLite.
 using AiAvatar.Backend.Data;
 using AiAvatar.Backend.Data.Entities;
 using AiAvatar.Backend.Models;
@@ -10,124 +10,187 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
 {
     private const int MaxConversationTitleLength = 80;
 
-    public async Task<ConversationEntity> GetOrCreateConversationAsync(
-        Guid? conversationId,
-        string firstUserMessage,
+    public async Task<AvatarChatResponse?> TryGetCompletedTurnAsync(
+        Guid turnId,
+        Guid? requestedConversationId,
+        string userMessage,
         CancellationToken cancellationToken)
     {
-        if (conversationId is Guid existingId)
-        {
-            var existing = await db.Conversations.FindAsync(
-                [existingId],
+        var user = await db.Messages
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                item => item.TurnId == turnId && item.Role == "user",
                 cancellationToken);
 
-            if (existing is null)
-            {
-                throw new KeyNotFoundException(
-                    $"Conversation '{existingId}' was not found in the local database.");
-            }
-
-            return existing;
+        if (user is null)
+        {
+            return null;
         }
 
-        var now = DateTime.UtcNow;
-        var conversation = new ConversationEntity
-        {
-            Title = BuildConversationTitle(firstUserMessage),
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now,
-        };
+        EnsureTurnMatchesRequest(user, requestedConversationId, userMessage);
 
-        db.Conversations.Add(conversation);
-        await db.SaveChangesAsync(cancellationToken);
-        return conversation;
+        var assistant = await db.Messages
+            .AsNoTracking()
+            .Include(item => item.LlmTelemetry)
+            .SingleOrDefaultAsync(
+                item => item.TurnId == turnId && item.Role == "assistant",
+                cancellationToken);
+
+        if (assistant?.LlmTelemetry is null)
+        {
+            throw new InvalidOperationException(
+                $"Chat turn '{turnId}' is incomplete in the local database.");
+        }
+
+        return BuildResponse(assistant);
     }
 
-    public async Task<IReadOnlyList<ChatMessage>> GetRecentMessagesAsync(
-        Guid conversationId,
+    public async Task<IReadOnlyList<ChatMessage>> BuildModelContextAsync(
+        Guid? conversationId,
+        string currentUserMessage,
         int maxMessages,
         CancellationToken cancellationToken)
     {
-        if (maxMessages < 0)
+        if (maxMessages < 1)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(maxMessages),
-                "The history limit cannot be negative.");
+                "The model context must allow at least the current user message.");
         }
 
-        if (maxMessages == 0)
+        if (conversationId is null)
         {
-            return [];
+            return [new ChatMessage("user", currentUserMessage.Trim())];
         }
 
-        var messages = await db.Messages
-            .AsNoTracking()
-            .Where(item => item.ConversationId == conversationId)
-            .OrderByDescending(item => item.CreatedAtUtc)
-            .ThenByDescending(item => item.Id)
-            .Take(maxMessages)
-            .Select(item => new ChatMessage(item.Role, item.Content))
-            .ToListAsync(cancellationToken);
+        if (!await db.Conversations
+                .AsNoTracking()
+                .AnyAsync(item => item.Id == conversationId.Value, cancellationToken))
+        {
+            throw new KeyNotFoundException(
+                $"Conversation '{conversationId}' was not found in the local database.");
+        }
 
-        messages.Reverse();
-        return messages;
+        var historyLimit = maxMessages - 1;
+        List<ChatMessage> history = [];
+        if (historyLimit > 0)
+        {
+            history = await db.Messages
+                .AsNoTracking()
+                .Where(item => item.ConversationId == conversationId.Value)
+                .OrderByDescending(item => item.CreatedAtUtc)
+                .ThenByDescending(item => item.Id)
+                .Take(historyLimit)
+                .Select(item => new ChatMessage(item.Role, item.Content))
+                .ToListAsync(cancellationToken);
+        }
+
+        history.Reverse();
+        history.Add(new ChatMessage("user", currentUserMessage.Trim()));
+        return history;
     }
 
-    public async Task<MessageEntity> AddUserMessageAsync(
-        Guid conversationId,
-        string content,
+    public async Task<AvatarChatResponse> CommitTurnAsync(
+        Guid? conversationId,
+        Guid turnId,
+        string userMessage,
+        OllamaDecisionResult ollamaResult,
         CancellationToken cancellationToken)
     {
-        return await AddMessageAsync(
+        var existing = await TryGetCompletedTurnAsync(
+            turnId,
             conversationId,
-            role: "user",
-            content: content.Trim(),
-            decision: null,
+            userMessage,
             cancellationToken);
-    }
+        if (existing is not null)
+        {
+            return existing;
+        }
 
-    public async Task<MessageEntity> AddAssistantMessageAsync(
-        Guid conversationId,
-        AvatarDecision decision,
-        CancellationToken cancellationToken)
-    {
-        return await AddMessageAsync(
-            conversationId,
-            role: "assistant",
-            content: decision.Speech.Trim(),
-            decision,
-            cancellationToken);
-    }
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-    public async Task SaveLlmTelemetryAsync(
-        Guid messageId,
-        ModelTelemetry telemetry,
-        CancellationToken cancellationToken)
-    {
-        await EnsureAssistantMessageExistsAsync(messageId, cancellationToken);
-
-        var entity = await db.LlmTelemetry
-            .SingleOrDefaultAsync(
-                item => item.MessageId == messageId,
+        try
+        {
+            var conversation = await GetOrCreateConversationForCommitAsync(
+                conversationId,
+                userMessage,
                 cancellationToken);
 
-        if (entity is null)
-        {
-            entity = new LlmTelemetryEntity
+            var now = DateTime.UtcNow;
+            var decision = ollamaResult.Decision with
             {
-                MessageId = messageId,
+                Speech = ollamaResult.Decision.Speech.Trim(),
             };
-            db.LlmTelemetry.Add(entity);
+            var user = new MessageEntity
+            {
+                ConversationId = conversation.Id,
+                TurnId = turnId,
+                Role = "user",
+                Content = userMessage.Trim(),
+                CreatedAtUtc = now,
+            };
+
+            var assistant = new MessageEntity
+            {
+                ConversationId = conversation.Id,
+                TurnId = turnId,
+                Role = "assistant",
+                Content = decision.Speech,
+                Language = decision.Language,
+                Emotion = decision.Emotion,
+                EmotionIntensity = decision.EmotionIntensity,
+                Gesture = decision.Gesture,
+                GestureIntensity = decision.GestureIntensity,
+                CreatedAtUtc = now.AddTicks(1),
+            };
+
+            var telemetry = new LlmTelemetryEntity
+            {
+                MessageId = assistant.Id,
+                Message = assistant,
+                Model = ollamaResult.Telemetry.Model,
+                TotalDurationMs = ollamaResult.Telemetry.TotalDurationMs,
+                LoadDurationMs = ollamaResult.Telemetry.LoadDurationMs,
+                PromptTokens = ollamaResult.Telemetry.PromptTokens,
+                OutputTokens = ollamaResult.Telemetry.OutputTokens,
+                CreatedAtUtc = now.AddTicks(1),
+            };
+
+            conversation.UpdatedAtUtc = assistant.CreatedAtUtc;
+            db.Messages.AddRange(user, assistant);
+            db.LlmTelemetry.Add(telemetry);
+
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return new AvatarChatResponse(
+                conversation.Id,
+                assistant.Id,
+                decision,
+                ollamaResult.Telemetry);
         }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            db.ChangeTracker.Clear();
 
-        entity.Model = telemetry.Model;
-        entity.TotalDurationMs = telemetry.TotalDurationMs;
-        entity.LoadDurationMs = telemetry.LoadDurationMs;
-        entity.PromptTokens = telemetry.PromptTokens;
-        entity.OutputTokens = telemetry.OutputTokens;
-        entity.CreatedAtUtc = DateTime.UtcNow;
+            var winner = await TryGetCompletedTurnAsync(
+                turnId,
+                conversationId,
+                userMessage,
+                cancellationToken);
+            if (winner is not null)
+            {
+                return winner;
+            }
 
-        await db.SaveChangesAsync(cancellationToken);
+            throw;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async Task<bool> AssistantMessageExistsAsync(
@@ -172,40 +235,36 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<MessageEntity> AddMessageAsync(
-        Guid conversationId,
-        string role,
-        string content,
-        AvatarDecision? decision,
+    private async Task<ConversationEntity> GetOrCreateConversationForCommitAsync(
+        Guid? conversationId,
+        string firstUserMessage,
         CancellationToken cancellationToken)
     {
-        var conversation = await db.Conversations.FindAsync(
-            [conversationId],
-            cancellationToken);
-
-        if (conversation is null)
+        if (conversationId is Guid existingId)
         {
-            throw new KeyNotFoundException(
-                $"Conversation '{conversationId}' was not found in the local database.");
+            var existing = await db.Conversations.FindAsync(
+                [existingId],
+                cancellationToken);
+
+            if (existing is null)
+            {
+                throw new KeyNotFoundException(
+                    $"Conversation '{existingId}' was not found in the local database.");
+            }
+
+            return existing;
         }
 
         var now = DateTime.UtcNow;
-        var message = new MessageEntity
+        var conversation = new ConversationEntity
         {
-            ConversationId = conversationId,
-            Role = role,
-            Content = content,
-            Emotion = decision?.Emotion,
-            EmotionIntensity = decision?.EmotionIntensity,
-            Gesture = decision?.Gesture,
-            GestureIntensity = decision?.GestureIntensity,
+            Title = BuildConversationTitle(firstUserMessage),
             CreatedAtUtc = now,
+            UpdatedAtUtc = now,
         };
 
-        conversation.UpdatedAtUtc = now;
-        db.Messages.Add(message);
-        await db.SaveChangesAsync(cancellationToken);
-        return message;
+        db.Conversations.Add(conversation);
+        return conversation;
     }
 
     private async Task EnsureAssistantMessageExistsAsync(
@@ -217,6 +276,49 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
             throw new KeyNotFoundException(
                 $"Assistant message '{messageId}' was not found in the local database.");
         }
+    }
+
+    private static void EnsureTurnMatchesRequest(
+        MessageEntity user,
+        Guid? requestedConversationId,
+        string userMessage)
+    {
+        if (requestedConversationId is Guid requested &&
+            requested != user.ConversationId)
+        {
+            throw new ChatTurnConflictException(
+                $"TurnId '{user.TurnId}' already belongs to conversation '{user.ConversationId}'.");
+        }
+
+        if (!string.Equals(user.Content, userMessage.Trim(), StringComparison.Ordinal))
+        {
+            throw new ChatTurnConflictException(
+                $"TurnId '{user.TurnId}' was already used for a different message.");
+        }
+    }
+
+    private static AvatarChatResponse BuildResponse(MessageEntity assistant)
+    {
+        var telemetry = assistant.LlmTelemetry
+            ?? throw new InvalidOperationException(
+                $"Assistant message '{assistant.Id}' has no LLM telemetry.");
+
+        return new AvatarChatResponse(
+            assistant.ConversationId,
+            assistant.Id,
+            new AvatarDecision(
+                assistant.Content,
+                assistant.Language ?? "und",
+                assistant.Emotion ?? "neutral",
+                assistant.EmotionIntensity ?? 0,
+                assistant.Gesture ?? "none",
+                assistant.GestureIntensity ?? 0),
+            new ModelTelemetry(
+                telemetry.Model,
+                telemetry.TotalDurationMs,
+                telemetry.LoadDurationMs,
+                telemetry.PromptTokens,
+                telemetry.OutputTokens));
     }
 
     private static string BuildConversationTitle(string firstUserMessage)

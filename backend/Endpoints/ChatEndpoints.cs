@@ -1,7 +1,6 @@
-// This endpoint group validates the new user message, rebuilds trusted conversation context from SQLite, persists the current turn, asks Ollama for an avatar decision, stores telemetry, and returns the browser response.
+// This endpoint group validates one idempotent chat turn and delegates backend-owned history plus atomic persistence to ChatTurnService.
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Services;
-using AiAvatar.Backend.Services.Ollama;
 using AiAvatar.Backend.Services.Persistence;
 
 namespace AiAvatar.Backend.Endpoints;
@@ -12,8 +11,7 @@ public static class ChatEndpoints
     {
         endpoints.MapPost("/api/chat", async (
             ChatRequest request,
-            OllamaClient ollama,
-            IConversationStore conversationStore,
+            ChatTurnService chatTurnService,
             CancellationToken cancellationToken) =>
         {
             var validationError = ChatRequestValidator.Validate(request);
@@ -22,48 +20,16 @@ public static class ChatEndpoints
                 return Results.BadRequest(new { error = validationError });
             }
 
-            var userMessage = request.Message.Trim();
-
             try
             {
-                var conversation = await conversationStore.GetOrCreateConversationAsync(
-                    request.ConversationId,
-                    userMessage,
+                var response = await chatTurnService.ExecuteAsync(
+                    request,
                     cancellationToken);
-
-                var persistedHistory = await conversationStore.GetRecentMessagesAsync(
-                    conversation.Id,
-                    OllamaRequestFactory.MaxConversationMessages - 1,
-                    cancellationToken);
-
-                var modelContext = persistedHistory
-                    .Append(new ChatMessage("user", userMessage))
-                    .ToArray();
-
-                await conversationStore.AddUserMessageAsync(
-                    conversation.Id,
-                    userMessage,
-                    cancellationToken);
-
-                var ollamaResult = await ollama.CreateDecisionAsync(
-                    modelContext,
-                    cancellationToken);
-
-                var assistantMessage = await conversationStore.AddAssistantMessageAsync(
-                    conversation.Id,
-                    ollamaResult.Decision,
-                    cancellationToken);
-
-                await conversationStore.SaveLlmTelemetryAsync(
-                    assistantMessage.Id,
-                    ollamaResult.Telemetry,
-                    cancellationToken);
-
-                return Results.Ok(new AvatarChatResponse(
-                    conversation.Id,
-                    assistantMessage.Id,
-                    ollamaResult.Decision,
-                    ollamaResult.Telemetry));
+                return Results.Ok(response);
+            }
+            catch (ChatTurnConflictException exception)
+            {
+                return Results.Conflict(new { error = exception.Message });
             }
             catch (KeyNotFoundException exception)
             {

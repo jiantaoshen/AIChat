@@ -1,4 +1,4 @@
-// This file performs deterministic input validation before conversation data is persisted or sent to Ollama.
+// This file validates one client chat turn before backend-owned conversation history is read or changed.
 using AiAvatar.Backend.Models;
 
 namespace AiAvatar.Backend.Services;
@@ -19,14 +19,19 @@ public static class ChatRequestValidator
             return "ConversationId must be null or a non-empty GUID.";
         }
 
+        if (request.TurnId == Guid.Empty)
+        {
+            return "TurnId must be a non-empty GUID.";
+        }
+
         if (string.IsNullOrWhiteSpace(request.Message))
         {
-            return "Message must be a non-empty user message.";
+            return "Message must be non-empty.";
         }
 
         if (request.Message.Length > MaxCharactersPerMessage)
         {
-            return $"A single message cannot exceed {MaxCharactersPerMessage:N0} characters in this MVP.";
+            return $"Message cannot exceed {MaxCharactersPerMessage:N0} characters in this MVP.";
         }
 
         return null;

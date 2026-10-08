@@ -3,6 +3,7 @@ using System;
 using AiAvatar.Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AiAvatar.Backend.Migrations
 {
     [DbContext(typeof(AvatarDbContext))]
-    partial class AvatarDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261008124233_AddTurnId")]
+    partial class AddTurnId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");

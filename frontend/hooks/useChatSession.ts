@@ -16,8 +16,15 @@ const EXPRESSION_HOLD_AFTER_SPEECH_MS = 1500;
 
 type ChatState = "idle" | "thinking" | "error";
 
+interface RetryableTurn {
+  conversationId: string | null;
+  turnId: string;
+  message: string;
+}
+
 const INITIAL_DECISION: AvatarDecision = {
   speech: "",
+  language: "zh",
   emotion: "neutral",
   emotionIntensity: 0.22,
   gesture: "none",
@@ -43,6 +50,12 @@ export function useChatSession() {
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [isLogOpen, setIsLogOpen] = useState(false);
   const neutralResetTimerRef = useRef<number | null>(null);
+  // Identifies the latest user turn. A new message can interrupt TTS playback,
+  // so older speech completions must not schedule UI work for the new turn.
+  const turnGenerationRef = useRef(0);
+  // Keeps one failed logical turn stable across retries so the backend can
+  // return the already-committed result instead of executing the turn twice.
+  const retryableTurnRef = useRef<RetryableTurn | null>(null);
 
   const {
     speechState,
@@ -58,7 +71,9 @@ export function useChatSession() {
   const operationalState: OperationalState =
     chatState !== "idle" ? chatState : speechState;
   const isBusy = operationalState !== "idle" && operationalState !== "error";
-  const canSend = input.trim().length > 0 && !isBusy;
+  // Text generation itself remains single-flight, but TTS synthesis/playback is
+  // interruptible: typing and sending the next message should stop the voice.
+  const canSend = input.trim().length > 0 && chatState !== "thinking";
   const canReplay = hasReplay && !isBusy;
 
   const latestAssistantMessage = [...messages]
@@ -82,15 +97,24 @@ export function useChatSession() {
 
   async function sendMessage() {
     const text = input.trim();
-    if (!text || isBusy) {
+    if (!text || chatState === "thinking") {
       return;
     }
 
+    const turnGeneration = ++turnGenerationRef.current;
     stopSpeech();
     clearNeutralResetTimer();
 
+    const retryable = retryableTurnRef.current;
+    const isRetry =
+      retryable?.conversationId === conversationId &&
+      retryable.message === text;
+    const turnId =
+      isRetry && retryable ? retryable.turnId : crypto.randomUUID();
+
+    const messagesBeforeTurn = messages;
     const userMessage: ChatMessage = { role: "user", content: text };
-    const nextMessages = [...messages, userMessage];
+    const nextMessages = [...messagesBeforeTurn, userMessage];
 
     setMessages(nextMessages);
     setInput("");
@@ -102,9 +126,15 @@ export function useChatSession() {
     try {
       const response = await sendChatRequest({
         conversationId,
+        turnId,
         message: text,
       });
 
+      if (turnGeneration !== turnGenerationRef.current) {
+        return;
+      }
+
+      retryableTurnRef.current = null;
       setConversationId(response.conversationId);
       setMessages((current) => [
         ...current,
@@ -121,28 +151,58 @@ export function useChatSession() {
       }
 
       try {
-        await speak({
+        const speechResult = await speak({
           messageId: response.assistantMessageId,
           text: response.decision.speech,
+          language: response.decision.language,
           emotion: response.decision.emotion,
           emotionIntensity: response.decision.emotionIntensity,
         });
-        scheduleNeutralReset(response.decision, EXPRESSION_HOLD_AFTER_SPEECH_MS);
+
+        if (turnGeneration !== turnGenerationRef.current) {
+          return;
+        }
+
+        scheduleNeutralReset(
+          response.decision,
+          speechResult === "completed"
+            ? EXPRESSION_HOLD_AFTER_SPEECH_MS
+            : EXPRESSION_HOLD_WITHOUT_TTS_MS,
+        );
       } catch {
         // A TTS failure must not discard a successful text response.
+        if (turnGeneration !== turnGenerationRef.current) {
+          return;
+        }
+
         scheduleNeutralReset(response.decision, EXPRESSION_HOLD_WITHOUT_TTS_MS);
       }
     } catch (caught) {
+      if (turnGeneration !== turnGenerationRef.current) {
+        return;
+      }
+
       const message =
         caught instanceof Error ? caught.message : "Unknown local-model error.";
       const fallbackDecision: AvatarDecision = {
         speech: "",
+        language: "en",
         emotion: "confused",
         emotionIntensity: 0.5,
         gesture: "none",
         gestureIntensity: 0,
       };
 
+      retryableTurnRef.current = {
+        conversationId,
+        turnId,
+        message: text,
+      };
+      // The backend owns persistent conversation state. If this logical turn did
+      // not produce a confirmed response, remove its optimistic UI message and
+      // put the text back so a retry can reuse the same turnId.
+      setMessages(messagesBeforeTurn);
+      setInput(text);
       setError(message);
       setDecision(fallbackDecision);
       setChatState("error");
@@ -168,6 +228,8 @@ export function useChatSession() {
   }
 
   function resetConversation() {
+    turnGenerationRef.current += 1;
+    retryableTurnRef.current = null;
     clearSpeech();
     clearNeutralResetTimer();
     setMessages(INITIAL_MESSAGES);

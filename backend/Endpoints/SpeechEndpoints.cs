@@ -1,7 +1,6 @@
-// This endpoint group validates persisted assistant speech requests, calls local CosyVoice, stores TTS telemetry, and returns WAV audio to the browser.
+// This endpoint group validates speech HTTP input and delegates persisted-message synthesis plus telemetry to SpeechSynthesisService.
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Options;
-using AiAvatar.Backend.Services.Persistence;
 using AiAvatar.Backend.Services.Speech;
 using Microsoft.Extensions.Options;
 
@@ -13,8 +12,7 @@ public static class SpeechEndpoints
     {
         endpoints.MapPost("/api/speech", async (
             SpeechSynthesisRequest request,
-            CosyVoiceClient cosyVoice,
-            IConversationStore conversationStore,
+            SpeechSynthesisService speechSynthesisService,
             IOptions<CosyVoiceOptions> cosyVoiceOptions,
             CancellationToken cancellationToken) =>
         {
@@ -51,52 +49,11 @@ public static class SpeechEndpoints
                 return Results.BadRequest(new { error = $"Unsupported emotion: {request.Emotion}" });
             }
 
-            if (!await conversationStore.AssistantMessageExistsAsync(
-                    request.MessageId,
-                    cancellationToken))
-            {
-                return Results.NotFound(new
-                {
-                    error = $"Assistant message '{request.MessageId}' was not found in the local database.",
-                });
-            }
+            var result = await speechSynthesisService.SynthesizeAsync(
+                request,
+                cancellationToken);
 
-            try
-            {
-                var result = await cosyVoice.SynthesizeAsync(request, cancellationToken);
-
-                await conversationStore.SaveTtsTelemetryAsync(
-                    request.MessageId,
-                    result,
-                    cancellationToken);
-
-                return Results.File(result.Audio, "audio/wav");
-            }
-            catch (KeyNotFoundException exception)
-            {
-                return Results.NotFound(new { error = exception.Message });
-            }
-            catch (HttpRequestException exception)
-            {
-                return Results.Problem(
-                    detail: exception.Message,
-                    statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "Local CosyVoice request failed");
-            }
-            catch (TaskCanceledException exception)
-            {
-                return Results.Problem(
-                    detail: $"Local text-to-speech timed out: {exception.Message}",
-                    statusCode: StatusCodes.Status504GatewayTimeout,
-                    title: "CosyVoice synthesis timed out");
-            }
-            catch (Exception exception)
-            {
-                return Results.Problem(
-                    detail: exception.Message,
-                    statusCode: StatusCodes.Status500InternalServerError,
-                    title: "Unexpected local TTS error");
-            }
+            return Results.File(result.Audio, "audio/wav");
         });
 
         return endpoints;

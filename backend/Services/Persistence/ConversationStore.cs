@@ -1,6 +1,7 @@
 // This service owns backend conversation history and atomically persists completed chat turns plus speech telemetry through EF Core SQLite.
 using AiAvatar.Backend.Data;
 using AiAvatar.Backend.Data.Entities;
+using AiAvatar.Backend.Errors;
 using AiAvatar.Backend.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -67,7 +68,7 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
                 .AsNoTracking()
                 .AnyAsync(item => item.Id == conversationId.Value, cancellationToken))
         {
-            throw new KeyNotFoundException(
+            throw new ResourceNotFoundException(
                 $"Conversation '{conversationId}' was not found in the local database.");
         }
 
@@ -248,7 +249,7 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
 
             if (existing is null)
             {
-                throw new KeyNotFoundException(
+                throw new ResourceNotFoundException(
                     $"Conversation '{existingId}' was not found in the local database.");
             }
 
@@ -273,7 +274,7 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
     {
         if (!await AssistantMessageExistsAsync(messageId, cancellationToken))
         {
-            throw new KeyNotFoundException(
+            throw new ResourceNotFoundException(
                 $"Assistant message '{messageId}' was not found in the local database.");
         }
     }

@@ -1,6 +1,7 @@
-// This file is the backend composition root: it configures options, persistence, HTTP clients, CORS, database startup, and the three endpoint groups.
+// This file is the backend composition root: it configures options, persistence, HTTP clients, centralized ProblemDetails handling, CORS, database startup, and endpoint groups.
 using AiAvatar.Backend.Data;
 using AiAvatar.Backend.Endpoints;
+using AiAvatar.Backend.Infrastructure;
 using AiAvatar.Backend.Options;
 using AiAvatar.Backend.Services;
 using AiAvatar.Backend.Services.Ollama;
@@ -44,6 +45,16 @@ builder.Services.AddDbContext<AvatarDbContext>(options =>
     options.UseSqlite(sqliteConnection.ConnectionString));
 builder.Services.AddScoped<IConversationStore, ConversationStore>();
 builder.Services.AddScoped<ChatTurnService>();
+builder.Services.AddScoped<SpeechSynthesisService>();
+
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+    };
+});
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
 builder.Services.AddSingleton<OllamaRequestFactory>();
 builder.Services.AddSingleton<OllamaResponseParser>();
@@ -83,6 +94,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await database.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
 }
 
+app.UseExceptionHandler();
 app.UseCors("NextJsDevelopment");
 app.MapHealthEndpoints();
 app.MapChatEndpoints();

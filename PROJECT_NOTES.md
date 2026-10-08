@@ -1,40 +1,45 @@
-<!-- This file summarizes the current engineering scope and responsibility boundaries of the local AI Avatar MVP. -->
+<!-- This file summarizes current engineering scope, invariants, and code ownership. Installation instructions belong in WINDOWS_SETUP.md. -->
 # Project notes
 
 The current build is a **text-input local AI Avatar MVP**.
 
-Core stack:
-
-```text
-Next.js + shadcn/ui + Tailwind CSS
-ASP.NET Core / .NET 10
-Ollama + Qwen 4B
-CosyVoice3 TTS
-```
-
-Responsibility split:
+## Responsibility split
 
 ```text
 Qwen
-→ conversation semantics
+→ dialogue semantics
+→ response language
 → emotion
 → gesture intent
 
-C#
+ASP.NET Core / C#
 → validation
-→ operational state
+→ server-authoritative conversation state
+→ chat-turn orchestration
+→ idempotency and atomic persistence
 → motion policy
 → TTS policy
 → service orchestration
 
-Next.js
+Next.js / React
 → avatar rendering
 → dialogue UI
+→ browser session lifecycle
 → WAV playback
 → conversation log
 ```
 
-Code ownership after the readability refactor:
+## Core invariants
+
+- SQLite is the authoritative source of persisted conversation history.
+- The frontend sends `conversationId`, stable `turnId`, and the current `message`; it does not supply authoritative history.
+- The backend owns the bounded Ollama context window.
+- A completed chat turn is persisted atomically.
+- Retrying the same logical operation reuses its `turnId` and must not duplicate the turn.
+- Reset creates a new browser session lifecycle; stale work from an older session cannot update the new one.
+- TTS is an enhancement layer. Text remains successful when speech is unsupported or synthesis fails.
+
+## Code ownership
 
 ```text
 frontend/components/ChatPanel.tsx
@@ -43,14 +48,35 @@ frontend/components/ChatPanel.tsx
 frontend/components/ChatComposer.tsx
 → text input + send UI only
 
+frontend/hooks/chatSessionState.ts
+→ reducer state + session transitions
+
 frontend/hooks/useChatSession.ts
-→ browser session workflow, TTS, replay, errors, avatar timing
+→ high-level browser session orchestration
+
+frontend/hooks/useChatTurnTransport.ts
+→ chat request, AbortController, stable retry turnId
+
+frontend/hooks/useChatSpeechLifecycle.ts
+→ speech/replay lifecycle coordination
+
+frontend/hooks/useAvatarSpeech.ts
+→ audio synthesis/playback generation guards
+
+frontend/hooks/useNeutralDecisionTimer.ts
+→ identity-aware expression reset timing
 
 backend/Endpoints/*
 → HTTP route behavior
 
+backend/Services/ChatTurnService.cs
+→ one logical chat-turn boundary
+
+backend/Services/Persistence/ConversationStore.cs
+→ authoritative history + atomic SQLite persistence
+
 backend/Services/Ollama/OllamaRequestFactory.cs
-→ Ollama payload + the single 12-message model-context window
+→ Ollama payload + bounded model-context window
 
 backend/Services/Ollama/OllamaResponseParser.cs
 → Ollama envelope + avatar JSON + telemetry parsing
@@ -59,20 +85,13 @@ backend/Services/Ollama/OllamaClient.cs
 → Ollama HTTP transport/status only
 ```
 
-The frontend intentionally sends the current session history without applying its own model-context slice. The backend is the single owner of the Qwen context-window policy.
+## Documentation ownership
 
-The UI is intentionally tuned with straightforward Tailwind classes for a Full HD desktop target instead of a large responsive token/clamp system.
+Do not duplicate installation steps here.
 
-Current operational states:
-
-```text
-idle
-thinking
-synthesizing
-speaking
-error
-```
-
-Speech input, microphone capture, Push-to-Talk, and ASR are intentionally not part of this build. They can be added later as a separate perception/input layer without changing the Qwen or avatar-decision protocol.
+- `README.md` — overview, architecture, quick start, links.
+- `WINDOWS_SETUP.md` — canonical Windows prerequisites, installation, startup, verification, recovery.
+- `VOICE_TTS_SETUP_WINDOWS.md` — TTS-specific operation and troubleshooting only.
+- `PROJECT_NOTES.md` — engineering boundaries and invariants.
 
 Future areas may include RAG, long-term memory, LoRA/preference tuning, and Live2D/3D rendering.

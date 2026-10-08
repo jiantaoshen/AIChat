@@ -103,7 +103,7 @@ public sealed class CosyVoiceClient
         }
 
         throw new HttpRequestException(
-            "Local CosyVoice3 service is not ready. Run SETUP_COSYVOICE_WINDOWS.cmd and check VOICE_TTS_SETUP_WINDOWS.md.");
+            "Local CosyVoice3 service is not ready. See WINDOWS_SETUP.md for installation and VOICE_TTS_SETUP_WINDOWS.md for TTS troubleshooting.");
     }
 
     private async Task<CosyVoiceRuntimeStatus> ReadRuntimeStatusAsync(

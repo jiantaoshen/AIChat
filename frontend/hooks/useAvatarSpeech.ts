@@ -1,4 +1,4 @@
-// This file synthesizes supported assistant replies with local CosyVoice, plays the returned WAV in the browser, exposes speaking/unsupported state, and keeps a replayable copy of the latest utterance.
+// This hook synthesizes and plays local avatar speech. A generation token prevents stale fetch/audio callbacks from crossing stop/reset/next-turn boundaries.
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,6 +24,11 @@ interface UseAvatarSpeechOptions {
   onError?: (message: string) => void;
 }
 
+interface PlaybackCompletion {
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
 const COSYVOICE_SUPPORTED_LANGUAGES = new Set([
   "zh",
   "en",
@@ -42,19 +47,15 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const completionRef = useRef<{
-    resolve: () => void;
-    reject: (error: Error) => void;
-  } | null>(null);
+  const completionRef = useRef<PlaybackCompletion | null>(null);
   const generationRef = useRef(0);
 
-  const finishPlayback = useCallback((error?: Error) => {
+  const finishCurrentPlayback = useCallback((error?: Error) => {
     audioRef.current = null;
     setSpeechState("idle");
 
     const completion = completionRef.current;
     completionRef.current = null;
-
     if (!completion) {
       return;
     }
@@ -67,6 +68,8 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
   }, []);
 
   const stopSpeech = useCallback(() => {
+    // Every stop/reset/new utterance invalidates all callbacks created by the
+    // previous speech generation, even if fetch/audio already finished racing.
     generationRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
@@ -76,8 +79,8 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
       audioRef.current.currentTime = 0;
     }
 
-    finishPlayback();
-  }, [finishPlayback]);
+    finishCurrentPlayback();
+  }, [finishCurrentPlayback]);
 
   const replaceAudioUrl = useCallback((blob: Blob) => {
     if (audioUrlRef.current) {
@@ -98,6 +101,7 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
       audioRef.current.pause();
     }
 
+    const generation = generationRef.current;
     const audio = new Audio(url);
     audio.preload = "auto";
     audioRef.current = audio;
@@ -105,21 +109,40 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
     return await new Promise<void>((resolve, reject) => {
       completionRef.current = { resolve, reject };
 
+      const isCurrentPlayback = () =>
+        generation === generationRef.current && audioRef.current === audio;
+
       audio.onended = () => {
-        finishPlayback();
+        if (!isCurrentPlayback()) {
+          return;
+        }
+        finishCurrentPlayback();
       };
 
       audio.onerror = () => {
-        const error = new Error("The browser could not play the synthesized WAV audio.");
-        finishPlayback(error);
+        if (!isCurrentPlayback()) {
+          return;
+        }
+
+        finishCurrentPlayback(
+          new Error("The browser could not play the synthesized WAV audio."),
+        );
       };
 
       void audio.play().then(
         () => {
-          setSpeechState("speaking");
+          if (isCurrentPlayback()) {
+            setSpeechState("speaking");
+          } else {
+            audio.pause();
+          }
         },
         (caught) => {
-          finishPlayback(
+          if (!isCurrentPlayback()) {
+            return;
+          }
+
+          finishCurrentPlayback(
             caught instanceof Error
               ? caught
               : new Error("Browser audio playback was blocked."),
@@ -127,7 +150,7 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
         },
       );
     });
-  }, [finishPlayback]);
+  }, [finishCurrentPlayback]);
 
   const speak = useCallback(
     async (request: AvatarSpeechRequest): Promise<SpeechPlaybackResult> => {
@@ -160,9 +183,14 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
         abortRef.current = null;
         replaceAudioUrl(blob);
         await playCurrentUrl();
+
+        if (generation !== generationRef.current) {
+          return "interrupted";
+        }
+
         return "completed";
       } catch (caught) {
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || generation !== generationRef.current) {
           return "interrupted";
         }
 
@@ -176,12 +204,18 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
     [onError, playCurrentUrl, replaceAudioUrl, stopSpeech],
   );
 
-  const replay = useCallback(async (): Promise<void> => {
+  const replay = useCallback(async (): Promise<SpeechPlaybackResult> => {
     stopSpeech();
+    const generation = generationRef.current;
 
     try {
       await playCurrentUrl();
+      return generation === generationRef.current ? "completed" : "interrupted";
     } catch (caught) {
+      if (generation !== generationRef.current) {
+        return "interrupted";
+      }
+
       const message =
         caught instanceof Error ? caught.message : "Could not replay avatar speech.";
       onError?.(message);
@@ -202,8 +236,11 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
 
   useEffect(() => {
     return () => {
+      generationRef.current += 1;
       abortRef.current?.abort();
       audioRef.current?.pause();
+      completionRef.current?.resolve();
+      completionRef.current = null;
 
       if (audioUrlRef.current) {
         URL.revokeObjectURL(audioUrlRef.current);

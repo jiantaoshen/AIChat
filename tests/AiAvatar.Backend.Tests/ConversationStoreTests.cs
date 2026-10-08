@@ -11,31 +11,80 @@ namespace AiAvatar.Backend.Tests;
 public sealed class ConversationStoreTests
 {
     [Fact]
-    public async Task BuildModelContextAsync_LoadsBoundedPersistedHistoryAndAppendsCurrentIntent()
+    public async Task BuildModelContextAsync_UsesFiveCompleteTurnsAndNeverStartsWithAssistant()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var fixture = await SqliteFixture.CreateAsync(cancellationToken);
-        var conversation = new ConversationEntity { Title = "history" };
-        var start = DateTime.UtcNow.AddMinutes(-5);
+        var conversation = new ConversationEntity { Title = "long history" };
+        var start = DateTime.UtcNow.AddMinutes(-10);
         fixture.Db.Conversations.Add(conversation);
-        fixture.Db.Messages.AddRange(
-            Message(conversation.Id, "user", "old user", start),
-            Message(conversation.Id, "assistant", "old assistant", start.AddSeconds(1)),
-            Message(conversation.Id, "user", "recent user", start.AddSeconds(2)),
-            Message(conversation.Id, "assistant", "recent assistant", start.AddSeconds(3)));
+
+        for (var turn = 1; turn <= 7; turn++)
+        {
+            var turnId = Guid.NewGuid();
+            var turnStart = start.AddSeconds(turn * 2);
+            fixture.Db.Messages.AddRange(
+                Message(conversation.Id, turnId, "user", $"user {turn}", turnStart),
+                Message(conversation.Id, turnId, "assistant", $"assistant {turn}", turnStart.AddTicks(1)));
+        }
+
         await fixture.Db.SaveChangesAsync(cancellationToken);
         var store = new ConversationStore(fixture.Db);
 
         var context = await store.BuildModelContextAsync(
             conversation.Id,
             "  current user  ",
-            maxMessages: 3,
             cancellationToken);
 
-        Assert.Equal(3, context.Count);
-        Assert.Equal(new ChatMessage("user", "recent user"), context[0]);
-        Assert.Equal(new ChatMessage("assistant", "recent assistant"), context[1]);
-        Assert.Equal(new ChatMessage("user", "current user"), context[2]);
+        Assert.Equal(11, context.Count);
+        Assert.Equal(new ChatMessage("user", "user 3"), context[0]);
+        Assert.Equal(new ChatMessage("assistant", "assistant 3"), context[1]);
+        Assert.Equal(new ChatMessage("user", "current user"), context[^1]);
+
+        for (var index = 0; index < 10; index += 2)
+        {
+            Assert.Equal("user", context[index].Role);
+            Assert.Equal("assistant", context[index + 1].Role);
+        }
+    }
+
+    [Fact]
+    public async Task BuildModelContextAsync_IgnoresIncompleteTurnInsteadOfCuttingAtMessageBoundary()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var fixture = await SqliteFixture.CreateAsync(cancellationToken);
+        var conversation = new ConversationEntity { Title = "incomplete history" };
+        var start = DateTime.UtcNow.AddMinutes(-5);
+        fixture.Db.Conversations.Add(conversation);
+
+        for (var turn = 1; turn <= 5; turn++)
+        {
+            var turnId = Guid.NewGuid();
+            var turnStart = start.AddSeconds(turn * 2);
+            fixture.Db.Messages.AddRange(
+                Message(conversation.Id, turnId, "user", $"user {turn}", turnStart),
+                Message(conversation.Id, turnId, "assistant", $"assistant {turn}", turnStart.AddTicks(1)));
+        }
+
+        fixture.Db.Messages.Add(Message(
+            conversation.Id,
+            Guid.NewGuid(),
+            "assistant",
+            "orphan assistant",
+            DateTime.UtcNow));
+
+        await fixture.Db.SaveChangesAsync(cancellationToken);
+        var store = new ConversationStore(fixture.Db);
+
+        var context = await store.BuildModelContextAsync(
+            conversation.Id,
+            "current user",
+            cancellationToken);
+
+        Assert.Equal(11, context.Count);
+        Assert.DoesNotContain(context, message => message.Content == "orphan assistant");
+        Assert.Equal("user", context[0].Role);
+        Assert.Equal(new ChatMessage("user", "current user"), context[^1]);
     }
 
     [Fact]
@@ -130,18 +179,19 @@ public sealed class ConversationStoreTests
             store.BuildModelContextAsync(
                 Guid.NewGuid(),
                 "hello",
-                4,
                 cancellationToken));
     }
 
     private static MessageEntity Message(
         Guid conversationId,
+        Guid turnId,
         string role,
         string content,
         DateTime createdAtUtc) =>
         new()
         {
             ConversationId = conversationId,
+            TurnId = turnId,
             Role = role,
             Content = content,
             CreatedAtUtc = createdAtUtc,

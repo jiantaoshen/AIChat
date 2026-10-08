@@ -1,4 +1,4 @@
-// This file owns Ollama request construction, including the server-side conversation window, system prompt, inference options, and endpoint URIs.
+// This file serializes an already-bounded server-owned conversation into an Ollama request together with the system prompt and inference options.
 using System.Net.Http.Json;
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Options;
@@ -9,8 +9,6 @@ namespace AiAvatar.Backend.Services.Ollama;
 
 public sealed class OllamaRequestFactory
 {
-    internal const int MaxConversationMessages = 12;
-
     private readonly OllamaOptions _ollama;
     private readonly CharacterOptions _character;
 
@@ -26,7 +24,6 @@ public sealed class OllamaRequestFactory
     {
         var conversation = messages
             .Where(IsSupportedMessage)
-            .TakeLast(MaxConversationMessages)
             .Select(message => new
             {
                 role = message.Role.Trim().ToLowerInvariant(),

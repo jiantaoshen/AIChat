@@ -26,7 +26,6 @@ public sealed class ChatTurnService(
         var context = await conversationStore.BuildModelContextAsync(
             request.ConversationId,
             request.Message,
-            OllamaRequestFactory.MaxConversationMessages,
             cancellationToken);
 
         var ollamaResult = await ollama.CreateDecisionAsync(

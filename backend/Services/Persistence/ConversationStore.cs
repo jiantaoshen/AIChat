@@ -10,6 +10,7 @@ namespace AiAvatar.Backend.Services.Persistence;
 public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
 {
     private const int MaxConversationTitleLength = 80;
+    private const int MaxCompletedContextTurns = 5;
 
     public async Task<AvatarChatResponse?> TryGetCompletedTurnAsync(
         Guid turnId,
@@ -49,19 +50,12 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
     public async Task<IReadOnlyList<ChatMessage>> BuildModelContextAsync(
         Guid? conversationId,
         string currentUserMessage,
-        int maxMessages,
         CancellationToken cancellationToken)
     {
-        if (maxMessages < 1)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maxMessages),
-                "The model context must allow at least the current user message.");
-        }
-
+        var current = new ChatMessage("user", currentUserMessage.Trim());
         if (conversationId is null)
         {
-            return [new ChatMessage("user", currentUserMessage.Trim())];
+            return [current];
         }
 
         if (!await db.Conversations
@@ -72,22 +66,39 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
                 $"Conversation '{conversationId}' was not found in the local database.");
         }
 
-        var historyLimit = maxMessages - 1;
-        List<ChatMessage> history = [];
-        if (historyLimit > 0)
+        // Context selection is turn-aware. A persisted history item is eligible only when
+        // a user message and an assistant message share the same non-null TurnId. This
+        // prevents an assistant message from crossing the truncation boundary without its
+        // user prompt. Rows from the pre-TurnId schema are intentionally excluded because
+        // their turn boundary cannot be proven reliably.
+        var recentTurns = await (
+                from user in db.Messages.AsNoTracking()
+                join assistant in db.Messages.AsNoTracking()
+                    on new { user.ConversationId, user.TurnId }
+                    equals new { assistant.ConversationId, assistant.TurnId }
+                where
+                    user.ConversationId == conversationId.Value &&
+                    user.TurnId != null &&
+                    user.Role == "user" &&
+                    assistant.Role == "assistant"
+                orderby assistant.CreatedAtUtc descending, assistant.Id descending
+                select new
+                {
+                    UserContent = user.Content,
+                    AssistantContent = assistant.Content,
+                })
+            .Take(MaxCompletedContextTurns)
+            .ToListAsync(cancellationToken);
+
+        recentTurns.Reverse();
+        var history = new List<ChatMessage>(recentTurns.Count * 2 + 1);
+        foreach (var turn in recentTurns)
         {
-            history = await db.Messages
-                .AsNoTracking()
-                .Where(item => item.ConversationId == conversationId.Value)
-                .OrderByDescending(item => item.CreatedAtUtc)
-                .ThenByDescending(item => item.Id)
-                .Take(historyLimit)
-                .Select(item => new ChatMessage(item.Role, item.Content))
-                .ToListAsync(cancellationToken);
+            history.Add(new ChatMessage("user", turn.UserContent));
+            history.Add(new ChatMessage("assistant", turn.AssistantContent));
         }
 
-        history.Reverse();
-        history.Add(new ChatMessage("user", currentUserMessage.Trim()));
+        history.Add(current);
         return history;
     }
 

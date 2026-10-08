@@ -14,7 +14,6 @@ public interface IConversationStore
     Task<IReadOnlyList<ChatMessage>> BuildModelContextAsync(
         Guid? conversationId,
         string currentUserMessage,
-        int maxMessages,
         CancellationToken cancellationToken);
 
     Task<AvatarChatResponse> CommitTurnAsync(

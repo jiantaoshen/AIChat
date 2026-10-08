@@ -1,5 +1,5 @@
 {
-  "_description": "This file pins the current stable Next.js, React, shadcn/ui, Base UI, Tailwind CSS, TypeScript, and ESLint frontend toolchain used by the Windows 11 MVP.",
+  "_description": "This file pins the frontend toolchain, using TypeScript 7 for the CLI while exposing the TypeScript 6 compatibility API required by eslint-config-next/typescript-eslint.",
   "name": "ai-avatar-qwen4b-frontend",
   "version": "3.0.0",
   "private": true,
@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
-    "check": "npm run typecheck && npm run lint && npm run build",
+    "test": "node --test \"tests/**/*.test.mts\"",
+    "check": "npm run test && npm run typecheck && npm run lint && npm run build",
     "ui:add": "shadcn add"
   },
   "dependencies": {
@@ -33,10 +34,11 @@
     "@types/node": "24.13.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "eslint": "10.11.0",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.3.5",
     "postcss": "8.5.28",
     "tailwindcss": "4.3.3",
-    "typescript": "7.0.2"
+    "typescript": "npm:@typescript/typescript6@6.0.3",
+    "@typescript/native": "npm:typescript@7.0.2"
   }
 }

@@ -103,8 +103,9 @@ export function chatSessionReducer(
     case "sendFailed":
       return {
         ...state,
-        // Text generation is single-flight, so the final message is the one
-        // optimistic user message added by sendStarted for this failed turn.
+        // ChatTurnTransportController enforces one accepted text turn at a
+        // time, so the final message is the one optimistic user message added
+        // by sendStarted for this failed turn.
         messages: state.messages.slice(0, -1),
         input: action.retryMessage,
         error: action.message,

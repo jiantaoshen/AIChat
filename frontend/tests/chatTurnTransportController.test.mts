@@ -113,3 +113,51 @@ test("reset clears retry identity so a new session receives a new turnId", async
 
   assert.deepEqual(seenTurnIds, ["turn-a", "turn-b"]);
 });
+
+
+test("a second text execution cannot preempt an active LLM turn", async () => {
+  const first = deferred<string>();
+  let sendCount = 0;
+  let started = 0;
+  let firstSignal: AbortSignal | undefined;
+  const generatedIds = ["turn-first", "turn-second"];
+  const controller = new ChatTurnTransportController<string>(
+    (_request, signal) => {
+      sendCount += 1;
+      firstSignal = signal;
+      return first.promise;
+    },
+    () => generatedIds.shift() ?? "unexpected",
+  );
+
+  const firstExecution = controller.execute({
+    sessionId: 1,
+    conversationId: null,
+    message: "first",
+    onStart: () => {
+      started += 1;
+    },
+  });
+
+  const secondExecution = controller.execute({
+    sessionId: 1,
+    conversationId: null,
+    message: "second",
+    onStart: () => {
+      started += 1;
+    },
+  });
+
+  assert.equal(started, 1);
+  assert.equal(sendCount, 1);
+  assert.equal(firstSignal?.aborted, false);
+  assert.equal(await secondExecution, null);
+
+  first.resolve("ok");
+  const completed = await firstExecution;
+
+  assert.equal(completed?.turnId, "turn-first");
+  assert.equal(completed?.response, "ok");
+  assert.equal(started, 1);
+  assert.equal(sendCount, 1);
+});

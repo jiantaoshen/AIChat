@@ -75,24 +75,33 @@ export function useChatSession() {
       return;
     }
 
-    const identity: TurnIdentity = {
-      sessionId: sessionIdRef.current,
-      turnGeneration: ++turnGenerationRef.current,
-    };
-    stopSpeech();
-    clearNeutralResetTimer();
-
+    const sessionId = sessionIdRef.current;
     const userMessage: ChatMessage = { role: "user", content: text };
+    let identity: TurnIdentity | null = null;
 
     try {
       const completed = await executeTurn({
-        sessionId: identity.sessionId,
+        sessionId,
         conversationId: state.conversationId,
         message: text,
-        onStart: () => dispatch({ type: "sendStarted", userMessage }),
+        onStart: () => {
+          // This callback runs only after the transport synchronously acquires
+          // the single-flight text-turn slot. A duplicate send rejected by the
+          // controller must not mutate turn identity, interrupt speech, or add
+          // an optimistic user message.
+          identity = {
+            sessionId,
+            turnGeneration: ++turnGenerationRef.current,
+          };
+          stopSpeech();
+          clearNeutralResetTimer();
+          dispatch({ type: "sendStarted", userMessage });
+        },
       });
 
-      if (!completed || !isCurrentTurn(identity)) {
+      // null means either the execute was rejected because another text turn
+      // already owns the transport, or this turn became stale after reset.
+      if (!completed || identity === null || !isCurrentTurn(identity)) {
         return;
       }
 
@@ -103,7 +112,7 @@ export function useChatSession() {
         identity,
       );
     } catch (caught) {
-      if (!isCurrentTurn(identity)) {
+      if (identity === null || !isCurrentTurn(identity)) {
         return;
       }
 

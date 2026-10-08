@@ -64,6 +64,13 @@ export class ChatTurnTransportController<TResponse> {
     message,
     onStart,
   }: ExecuteTurnOptions): Promise<CompletedTurn<TResponse> | null> {
+    // Text generation is truly single-flight. An active LLM turn owns the
+    // transport until it succeeds, fails, or is explicitly reset. A second
+    // execute must not preempt/abort it and must not run onStart.
+    if (this.activeTurn !== null) {
+      return null;
+    }
+
     const retryable = this.retryableTurn;
     const isRetry =
       retryable?.sessionId === sessionId &&
@@ -72,7 +79,6 @@ export class ChatTurnTransportController<TResponse> {
     const turnId = isRetry && retryable ? retryable.turnId : this.createTurnId();
 
     const controller = new AbortController();
-    this.activeTurn?.controller.abort();
     this.activeTurn = { sessionId, turnId, controller };
     onStart();
 

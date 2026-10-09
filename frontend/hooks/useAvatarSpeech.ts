@@ -1,11 +1,14 @@
-// React adapter around the deterministic AvatarSpeechController.
+// React adapter around deterministic speech and browser-audio controllers.
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  AudioPlaybackController,
+  type AudioLike,
+} from "@/hooks/audioPlaybackController";
+import {
   AvatarSpeechController,
   type AvatarSpeechRequest,
-  type AudioLike,
   type SpeechPlaybackResult,
   type SpeechPlaybackState,
 } from "@/hooks/avatarSpeechController";
@@ -20,15 +23,21 @@ interface UseAvatarSpeechOptions {
 export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
   const [speechState, setSpeechState] = useState<SpeechPlaybackState>("idle");
   const [hasReplay, setHasReplay] = useState(false);
+  const [playback] = useState(
+    () =>
+      new AudioPlaybackController({
+        createAudio: (url) => new Audio(url) as AudioLike,
+        createObjectUrl: (blob) => URL.createObjectURL(blob),
+        revokeObjectUrl: (url) => URL.revokeObjectURL(url),
+        onReplayAvailabilityChanged: setHasReplay,
+      }),
+  );
   const [controller] = useState(
     () =>
       new AvatarSpeechController({
         synthesizeSpeech,
-        createAudio: (url) => new Audio(url) as AudioLike,
-        createObjectUrl: (blob) => URL.createObjectURL(blob),
-        revokeObjectUrl: (url) => URL.revokeObjectURL(url),
+        playback,
         onStateChanged: setSpeechState,
-        onReplayAvailabilityChanged: setHasReplay,
         onError,
       }),
   );

@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  AvatarSpeechController,
+  AudioPlaybackController,
   type AudioLike,
+} from "../hooks/audioPlaybackController.ts";
+import {
+  AvatarSpeechController,
   type SpeechPlaybackState,
 } from "../hooks/avatarSpeechController.ts";
 
@@ -47,8 +50,7 @@ function createHarness(
   let objectUrlCounter = 0;
   const revoked: string[] = [];
 
-  const controller = new AvatarSpeechController({
-    synthesizeSpeech: synthesize,
+  const playback = new AudioPlaybackController({
     createAudio: () => {
       const audio = new FakeAudio();
       audios.push(audio);
@@ -56,12 +58,24 @@ function createHarness(
     },
     createObjectUrl: () => `blob:test-${++objectUrlCounter}`,
     revokeObjectUrl: (url) => revoked.push(url),
-    onStateChanged: (state) => states.push(state),
     onReplayAvailabilityChanged: (available) =>
       replayAvailability.push(available),
   });
 
-  return { controller, states, replayAvailability, audios, revoked };
+  const controller = new AvatarSpeechController({
+    synthesizeSpeech: synthesize,
+    playback,
+    onStateChanged: (state) => states.push(state),
+  });
+
+  return {
+    controller,
+    playback,
+    states,
+    replayAvailability,
+    audios,
+    revoked,
+  };
 }
 
 async function waitFor(condition: () => boolean) {
@@ -101,15 +115,13 @@ test("reset while TTS synthesis aborts the request and stale completion cannot r
   assert.equal(audios.length, 0);
 });
 
-test("a new send can interrupt active speech without waiting for audio onended", async () => {
+test("a new send can interrupt delegated audio playback without waiting for onended", async () => {
   const { controller, audios } = createHarness();
 
   const speaking = controller.speak({ messageId: "assistant-1", supported: true });
   await waitFor(() => audios.length === 1 && controller.speechState === "speaking");
 
   const audio = audios[0]!;
-  // useChatSession calls stopSpeech() only after the new text turn owns the
-  // single-flight transport slot.
   controller.stop();
 
   assert.equal(audio.paused, true);
@@ -118,7 +130,7 @@ test("a new send can interrupt active speech without waiting for audio onended",
   assert.equal(await speaking, "interrupted");
 });
 
-test("a stale audio callback from the previous generation cannot end the new playback", async () => {
+test("a stale audio callback owned by AudioPlaybackController cannot end the new speech", async () => {
   const { controller, audios } = createHarness();
 
   const first = controller.speak({ messageId: "assistant-1", supported: true });
@@ -132,8 +144,6 @@ test("a stale audio callback from the previous generation cannot end the new pla
   await waitFor(() => audios.length === 2 && controller.speechState === "speaking");
   const currentAudio = audios[1]!;
 
-  // Browser events may arrive late even after pause/stop. The generation token
-  // and audio identity must make this callback a no-op.
   staleAudio.onended?.();
   assert.equal(controller.speechState, "speaking");
 
@@ -160,8 +170,6 @@ test("backend-reported unsupported speech is informational and does not call TTS
   assert.equal(synthesizeCalls, 0);
   assert.equal(audios.length, 0);
 
-  // useChatSpeechLifecycle invokes this when the forced unsupported-status hold
-  // timer expires. The state must have an explicit exit independent of send().
   controller.clearUnsupportedState();
   assert.equal(controller.speechState, "idle");
 });

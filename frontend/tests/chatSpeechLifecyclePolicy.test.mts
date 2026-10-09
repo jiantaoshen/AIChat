@@ -1,19 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { AudioPlaybackController } from "../hooks/audioPlaybackController.ts";
 import { AvatarSpeechController } from "../hooks/avatarSpeechController.ts";
 import { completeSpeechHold } from "../hooks/chatSpeechLifecyclePolicy.ts";
 
 function createUnsupportedController() {
-  return new AvatarSpeechController({
-    synthesizeSpeech: async () => new Blob(["unused"]),
+  const playback = new AudioPlaybackController({
     createAudio: () => {
       throw new Error("unsupported language must not create audio");
     },
     createObjectUrl: () => "blob:unused",
     revokeObjectUrl: () => {},
-    onStateChanged: () => {},
     onReplayAvailabilityChanged: () => {},
+  });
+
+  return new AvatarSpeechController({
+    synthesizeSpeech: async () => new Blob(["unused"]),
+    playback,
+    onStateChanged: () => {},
   });
 }
 

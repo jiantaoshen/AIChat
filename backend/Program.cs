@@ -4,6 +4,7 @@ using AiAvatar.Backend.Endpoints;
 using AiAvatar.Backend.Infrastructure;
 using AiAvatar.Backend.Options;
 using AiAvatar.Backend.Services;
+using AiAvatar.Backend.Services.Concurrency;
 using AiAvatar.Backend.Services.Ollama;
 using AiAvatar.Backend.Services.Persistence;
 using AiAvatar.Backend.Services.Speech;
@@ -45,6 +46,7 @@ builder.Services.AddDbContext<AvatarDbContext>(options =>
     options.UseSqlite(sqliteConnection.ConnectionString));
 builder.Services.AddScoped<IConversationStore, ConversationStore>();
 builder.Services.AddScoped<ChatTurnService>();
+builder.Services.AddSingleton<ConversationTurnGate>();
 builder.Services.AddScoped<SpeechSynthesisService>();
 
 builder.Services.AddProblemDetails(options =>
@@ -62,6 +64,8 @@ builder.Services.AddHttpClient<OllamaClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(120);
 });
+builder.Services.AddTransient<IChatDecisionGenerator>(serviceProvider =>
+    serviceProvider.GetRequiredService<OllamaClient>());
 
 builder.Services.AddHttpClient<CosyVoiceClient>((serviceProvider, client) =>
 {

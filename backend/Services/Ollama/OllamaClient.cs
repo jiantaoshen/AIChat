@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace AiAvatar.Backend.Services.Ollama;
 
-public sealed class OllamaClient
+public sealed class OllamaClient : IChatDecisionGenerator
 {
     private readonly HttpClient _httpClient;
     private readonly OllamaRequestFactory _requestFactory;

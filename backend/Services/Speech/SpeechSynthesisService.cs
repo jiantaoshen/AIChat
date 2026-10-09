@@ -1,8 +1,10 @@
-// This service owns one speech operation: load authoritative assistant semantics from SQLite, validate them, call CosyVoice, then persist TTS telemetry.
+// This service owns one speech operation: load authoritative assistant semantics,
+// validate them, call CosyVoice, then publish best-effort telemetry out of band.
 using AiAvatar.Backend.Errors;
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Options;
 using AiAvatar.Backend.Services.Persistence;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AiAvatar.Backend.Services.Speech;
@@ -10,7 +12,9 @@ namespace AiAvatar.Backend.Services.Speech;
 public sealed class SpeechSynthesisService(
     CosyVoiceClient cosyVoice,
     ISpeechRepository speechRepository,
-    IOptions<CosyVoiceOptions> cosyVoiceOptions)
+    ITtsTelemetrySink telemetrySink,
+    IOptions<CosyVoiceOptions> cosyVoiceOptions,
+    ILogger<SpeechSynthesisService> logger)
 {
     private readonly CosyVoiceOptions _options = cosyVoiceOptions.Value;
 
@@ -31,10 +35,13 @@ public sealed class SpeechSynthesisService(
         var input = BuildValidatedInput(source);
         var result = await cosyVoice.SynthesizeAsync(input, cancellationToken);
 
-        await speechRepository.SaveTtsTelemetryAsync(
-            messageId,
-            result,
-            cancellationToken);
+        var telemetry = TtsTelemetryRecord.FromResult(result);
+        if (!telemetrySink.TryRecord(messageId, telemetry))
+        {
+            logger.LogWarning(
+                "TTS telemetry queue is full; dropping telemetry for assistant message {MessageId}. Audio synthesis remains successful.",
+                messageId);
+        }
 
         return result;
     }

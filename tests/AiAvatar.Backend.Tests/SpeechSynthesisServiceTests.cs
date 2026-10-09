@@ -23,7 +23,7 @@ public sealed class SpeechSynthesisServiceTests
     }
 
     [Fact]
-    public async Task SynthesizeAsync_UsesPersistedAssistantSemanticsForCosyVoicePayload()
+    public async Task SynthesizeAsync_UsesPersistedAssistantSemanticsAndQueuesTelemetry()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var messageId = Guid.NewGuid();
@@ -33,25 +33,23 @@ public sealed class SpeechSynthesisServiceTests
                 "en",
                 "sad",
                 1.0));
+        var telemetrySink = new CapturingTelemetrySink();
         var handler = new CapturingCosyVoiceHandler();
         using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://127.0.0.1:8188"),
         };
-        var options = Microsoft.Extensions.Options.Options.Create(
-            new CosyVoiceOptions
-            {
-                Enabled = true,
-                ModelPath = "test-model",
-                StartupTimeoutSeconds = 10,
-                SynthesisTimeoutSeconds = 15,
-                MaxTextCharacters = 800,
-            });
+        var options = CreateOptions();
         var cosyVoice = new CosyVoiceClient(
             httpClient,
             options,
             NullLogger<CosyVoiceClient>.Instance);
-        var service = new SpeechSynthesisService(cosyVoice, repository, options);
+        var service = new SpeechSynthesisService(
+            cosyVoice,
+            repository,
+            telemetrySink,
+            options,
+            NullLogger<SpeechSynthesisService>.Instance);
 
         var result = await service.SynthesizeAsync(messageId, cancellationToken);
 
@@ -59,7 +57,48 @@ public sealed class SpeechSynthesisServiceTests
         Assert.NotNull(handler.CapturedPayload);
         Assert.Equal("persisted authoritative speech", handler.CapturedPayload.Text);
         Assert.InRange(Math.Abs(handler.CapturedPayload.Speed - 0.91), 0, 1e-10);
-        Assert.Equal(messageId, repository.SavedTelemetryMessageId);
+        Assert.Equal(messageId, telemetrySink.MessageId);
+        Assert.NotNull(telemetrySink.Telemetry);
+        Assert.Equal(result.Model, telemetrySink.Telemetry.Model);
+        Assert.Equal(result.SynthesisDurationMs, telemetrySink.Telemetry.SynthesisDurationMs);
+        Assert.Equal(0, repository.TelemetrySaveCalls);
+    }
+
+    [Fact]
+    public async Task SynthesizeAsync_ReturnsSuccessfulAudioWhenTelemetryQueueCannotAcceptRecord()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var messageId = Guid.NewGuid();
+        var repository = new FakeSpeechRepository(
+            new AssistantSpeechSource(
+                "audio must win over observability",
+                "en",
+                "neutral",
+                0.2));
+        var telemetrySink = new CapturingTelemetrySink(accept: false);
+        var handler = new CapturingCosyVoiceHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://127.0.0.1:8188"),
+        };
+        var options = CreateOptions();
+        var cosyVoice = new CosyVoiceClient(
+            httpClient,
+            options,
+            NullLogger<CosyVoiceClient>.Instance);
+        var service = new SpeechSynthesisService(
+            cosyVoice,
+            repository,
+            telemetrySink,
+            options,
+            NullLogger<SpeechSynthesisService>.Instance);
+
+        var result = await service.SynthesizeAsync(messageId, cancellationToken);
+
+        Assert.Equal(new byte[] { 1, 2, 3 }, result.Audio);
+        Assert.Equal(1, handler.SynthesizeCalls);
+        Assert.Equal(1, telemetrySink.RecordCalls);
+        Assert.Equal(0, repository.TelemetrySaveCalls);
     }
 
     [Fact]
@@ -73,12 +112,35 @@ public sealed class SpeechSynthesisServiceTests
                 "sv",
                 "neutral",
                 0.2));
+        var telemetrySink = new CapturingTelemetrySink();
         var handler = new CapturingCosyVoiceHandler();
         using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://127.0.0.1:8188"),
         };
-        var options = Microsoft.Extensions.Options.Options.Create(
+        var options = CreateOptions();
+        var cosyVoice = new CosyVoiceClient(
+            httpClient,
+            options,
+            NullLogger<CosyVoiceClient>.Instance);
+        var service = new SpeechSynthesisService(
+            cosyVoice,
+            repository,
+            telemetrySink,
+            options,
+            NullLogger<SpeechSynthesisService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<SpeechSynthesisRejectedException>(
+            () => service.SynthesizeAsync(messageId, cancellationToken));
+
+        Assert.Contains("language", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, handler.SynthesizeCalls);
+        Assert.Equal(0, telemetrySink.RecordCalls);
+        Assert.Equal(0, repository.TelemetrySaveCalls);
+    }
+
+    private static Microsoft.Extensions.Options.IOptions<CosyVoiceOptions> CreateOptions() =>
+        Microsoft.Extensions.Options.Options.Create(
             new CosyVoiceOptions
             {
                 Enabled = true,
@@ -87,19 +149,6 @@ public sealed class SpeechSynthesisServiceTests
                 SynthesisTimeoutSeconds = 15,
                 MaxTextCharacters = 800,
             });
-        var cosyVoice = new CosyVoiceClient(
-            httpClient,
-            options,
-            NullLogger<CosyVoiceClient>.Instance);
-        var service = new SpeechSynthesisService(cosyVoice, repository, options);
-
-        var exception = await Assert.ThrowsAsync<SpeechSynthesisRejectedException>(
-            () => service.SynthesizeAsync(messageId, cancellationToken));
-
-        Assert.Contains("language", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0, handler.SynthesizeCalls);
-        Assert.Null(repository.SavedTelemetryMessageId);
-    }
 
     private sealed class CapturingCosyVoiceHandler : HttpMessageHandler
     {
@@ -144,7 +193,7 @@ public sealed class SpeechSynthesisServiceTests
 
     private sealed class FakeSpeechRepository(AssistantSpeechSource source) : ISpeechRepository
     {
-        public Guid? SavedTelemetryMessageId { get; private set; }
+        public int TelemetrySaveCalls { get; private set; }
 
         public Task<AssistantSpeechSource?> GetAssistantSpeechSourceAsync(
             Guid messageId,
@@ -153,11 +202,29 @@ public sealed class SpeechSynthesisServiceTests
 
         public Task SaveTtsTelemetryAsync(
             Guid messageId,
-            SpeechSynthesisResult result,
+            TtsTelemetryRecord telemetry,
             CancellationToken cancellationToken)
         {
-            SavedTelemetryMessageId = messageId;
-            return Task.CompletedTask;
+            TelemetrySaveCalls += 1;
+            throw new InvalidOperationException(
+                "Request-path speech synthesis must not write telemetry directly.");
+        }
+    }
+
+    private sealed class CapturingTelemetrySink(bool accept = true) : ITtsTelemetrySink
+    {
+        public int RecordCalls { get; private set; }
+
+        public Guid? MessageId { get; private set; }
+
+        public TtsTelemetryRecord? Telemetry { get; private set; }
+
+        public bool TryRecord(Guid messageId, TtsTelemetryRecord telemetry)
+        {
+            RecordCalls += 1;
+            MessageId = messageId;
+            Telemetry = telemetry;
+            return accept;
         }
     }
 }

@@ -69,6 +69,10 @@ builder.Services.AddScoped<ISpeechRepository, SpeechRepository>();
 builder.Services.AddScoped<ChatTurnService>();
 builder.Services.AddSingleton<ConversationTurnGate>();
 builder.Services.AddScoped<SpeechSynthesisService>();
+builder.Services.AddSingleton<TtsTelemetryQueue>();
+builder.Services.AddSingleton<ITtsTelemetrySink>(serviceProvider =>
+    serviceProvider.GetRequiredService<TtsTelemetryQueue>());
+builder.Services.AddHostedService<TtsTelemetryBackgroundService>();
 
 builder.Services.AddProblemDetails(options =>
 {

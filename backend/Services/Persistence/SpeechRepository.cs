@@ -27,7 +27,7 @@ public sealed class SpeechRepository(AvatarDbContext db) : ISpeechRepository
 
     public async Task SaveTtsTelemetryAsync(
         Guid messageId,
-        SpeechSynthesisResult result,
+        TtsTelemetryRecord telemetry,
         CancellationToken cancellationToken)
     {
         await EnsureAssistantMessageExistsAsync(messageId, cancellationToken);
@@ -46,13 +46,13 @@ public sealed class SpeechRepository(AvatarDbContext db) : ISpeechRepository
             db.TtsTelemetry.Add(entity);
         }
 
-        entity.Model = result.Model;
-        entity.VoiceSource = result.VoiceSource;
-        entity.SynthesisDurationMs = result.SynthesisDurationMs;
+        entity.Model = telemetry.Model;
+        entity.VoiceSource = telemetry.VoiceSource;
+        entity.SynthesisDurationMs = telemetry.SynthesisDurationMs;
         entity.AudioDurationMs = null;
         entity.RealTimeFactor = null;
-        entity.UsedCuda = result.UsedCuda;
-        entity.UsedFp16 = result.UsedFp16;
+        entity.UsedCuda = telemetry.UsedCuda;
+        entity.UsedFp16 = telemetry.UsedFp16;
         entity.CreatedAtUtc = DateTime.UtcNow;
 
         await db.SaveChangesAsync(cancellationToken);

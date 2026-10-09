@@ -8,7 +8,7 @@ namespace AiAvatar.Backend.Tests;
 public sealed class SpeechRepositoryTests
 {
     [Fact]
-    public async Task GetAssistantSpeechSourceAsync_ReturnsPersistedContentAndEmotion()
+    public async Task GetAssistantSpeechSourceAsync_ReturnsPersistedContentLanguageAndEmotion()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var fixture = await PersistenceTestFixture.CreateAsync(cancellationToken);
@@ -41,7 +41,7 @@ public sealed class SpeechRepositoryTests
     }
 
     [Fact]
-    public async Task SaveTtsTelemetryAsync_PersistsTelemetryForAssistantMessage()
+    public async Task SaveTtsTelemetryAsync_PersistsTelemetrySnapshotForAssistantMessage()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var fixture = await PersistenceTestFixture.CreateAsync(cancellationToken);
@@ -63,8 +63,7 @@ public sealed class SpeechRepositoryTests
         var repository = new SpeechRepository(fixture.Db);
         await repository.SaveTtsTelemetryAsync(
             assistant.Id,
-            new SpeechSynthesisResult(
-                [1, 2, 3],
+            new TtsTelemetryRecord(
                 SynthesisDurationMs: 25,
                 Model: "test-tts",
                 VoiceSource: "reference.wav",

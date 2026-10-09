@@ -11,6 +11,6 @@ public interface ISpeechRepository
 
     Task SaveTtsTelemetryAsync(
         Guid messageId,
-        SpeechSynthesisResult result,
+        TtsTelemetryRecord telemetry,
         CancellationToken cancellationToken);
 }

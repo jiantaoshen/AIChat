@@ -13,11 +13,12 @@ public sealed class ChatTurnServiceConcurrencyTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var conversationId = Guid.NewGuid();
-        var store = new InMemoryConversationStore(conversationId);
+        var persistence = new InMemoryChatPersistence(conversationId);
         var generator = new BlockingDecisionGenerator();
         var service = new ChatTurnService(
             generator,
-            store,
+            persistence,
+            persistence,
             new ConversationTurnGate());
 
         var firstTask = service.ExecuteAsync(
@@ -45,7 +46,7 @@ public sealed class ChatTurnServiceConcurrencyTests
         await secondExecuteReturned.Task.WaitAsync(cancellationToken);
         Assert.False(generator.SecondCallStarted.Task.IsCompleted);
         Assert.DoesNotContain(
-            store.BuiltContexts,
+            persistence.BuiltContexts,
             context => context.CurrentUserMessage == "second user");
 
         generator.ReleaseFirstCall();
@@ -56,7 +57,7 @@ public sealed class ChatTurnServiceConcurrencyTests
         await generator.SecondCallStarted.Task.WaitAsync(cancellationToken);
 
         var secondContext = Assert.Single(
-            store.BuiltContexts.Where(
+            persistence.BuiltContexts.Where(
                 context => context.CurrentUserMessage == "second user"));
 
         Assert.Collection(
@@ -108,7 +109,9 @@ public sealed class ChatTurnServiceConcurrencyTests
                 new ModelTelemetry("test-model", 1, 0, 1, 1));
     }
 
-    private sealed class InMemoryConversationStore(Guid conversationId) : IConversationStore
+    private sealed class InMemoryChatPersistence(Guid conversationId) :
+        IChatTurnRepository,
+        IConversationHistoryReader
     {
         private readonly object _sync = new();
         private readonly List<ChatMessage> _history = [];
@@ -166,17 +169,6 @@ public sealed class ChatTurnServiceConcurrencyTests
                 ollamaResult.Decision,
                 ollamaResult.Telemetry));
         }
-
-        public Task<AssistantSpeechSource?> GetAssistantSpeechSourceAsync(
-            Guid messageId,
-            CancellationToken cancellationToken) =>
-            Task.FromResult<AssistantSpeechSource?>(null);
-
-        public Task SaveTtsTelemetryAsync(
-            Guid messageId,
-            SpeechSynthesisResult result,
-            CancellationToken cancellationToken) =>
-            Task.CompletedTask;
     }
 
     public sealed record BuiltContext(

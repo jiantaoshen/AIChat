@@ -26,7 +26,7 @@ public sealed class SpeechSynthesisServiceTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var messageId = Guid.NewGuid();
-        var store = new FakeConversationStore(
+        var repository = new FakeSpeechRepository(
             new AssistantSpeechSource(
                 "persisted authoritative speech",
                 "sad",
@@ -48,7 +48,7 @@ public sealed class SpeechSynthesisServiceTests
             httpClient,
             options,
             NullLogger<CosyVoiceClient>.Instance);
-        var service = new SpeechSynthesisService(cosyVoice, store, options);
+        var service = new SpeechSynthesisService(cosyVoice, repository, options);
 
         var result = await service.SynthesizeAsync(messageId, cancellationToken);
 
@@ -56,7 +56,7 @@ public sealed class SpeechSynthesisServiceTests
         Assert.NotNull(handler.CapturedPayload);
         Assert.Equal("persisted authoritative speech", handler.CapturedPayload.Text);
         Assert.InRange(Math.Abs(handler.CapturedPayload.Speed - 0.91), 0, 1e-10);
-        Assert.Equal(messageId, store.SavedTelemetryMessageId);
+        Assert.Equal(messageId, repository.SavedTelemetryMessageId);
     }
 
     private sealed class CapturingCosyVoiceHandler : HttpMessageHandler
@@ -97,7 +97,7 @@ public sealed class SpeechSynthesisServiceTests
         }
     }
 
-    private sealed class FakeConversationStore(AssistantSpeechSource source) : IConversationStore
+    private sealed class FakeSpeechRepository(AssistantSpeechSource source) : ISpeechRepository
     {
         public Guid? SavedTelemetryMessageId { get; private set; }
 
@@ -114,26 +114,5 @@ public sealed class SpeechSynthesisServiceTests
             SavedTelemetryMessageId = messageId;
             return Task.CompletedTask;
         }
-
-        public Task<AvatarChatResponse?> TryGetCompletedTurnAsync(
-            Guid turnId,
-            Guid? requestedConversationId,
-            string userMessage,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task<IReadOnlyList<ChatMessage>> BuildModelContextAsync(
-            Guid? conversationId,
-            string currentUserMessage,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task<AvatarChatResponse> CommitTurnAsync(
-            Guid? conversationId,
-            Guid turnId,
-            string userMessage,
-            OllamaDecisionResult ollamaResult,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
     }
 }

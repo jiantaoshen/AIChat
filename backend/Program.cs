@@ -44,7 +44,9 @@ sqliteConnection.ForeignKeys = true;
 
 builder.Services.AddDbContext<AvatarDbContext>(options =>
     options.UseSqlite(sqliteConnection.ConnectionString));
-builder.Services.AddScoped<IConversationStore, ConversationStore>();
+builder.Services.AddScoped<IChatTurnRepository, ChatTurnRepository>();
+builder.Services.AddScoped<IConversationHistoryReader, ConversationHistoryReader>();
+builder.Services.AddScoped<ISpeechRepository, SpeechRepository>();
 builder.Services.AddScoped<ChatTurnService>();
 builder.Services.AddSingleton<ConversationTurnGate>();
 builder.Services.AddScoped<SpeechSynthesisService>();

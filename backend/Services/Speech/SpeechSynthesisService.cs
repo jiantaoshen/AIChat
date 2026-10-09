@@ -9,7 +9,7 @@ namespace AiAvatar.Backend.Services.Speech;
 
 public sealed class SpeechSynthesisService(
     CosyVoiceClient cosyVoice,
-    IConversationStore conversationStore,
+    ISpeechRepository speechRepository,
     IOptions<CosyVoiceOptions> cosyVoiceOptions)
 {
     private readonly CosyVoiceOptions _options = cosyVoiceOptions.Value;
@@ -18,7 +18,7 @@ public sealed class SpeechSynthesisService(
         Guid messageId,
         CancellationToken cancellationToken)
     {
-        var source = await conversationStore.GetAssistantSpeechSourceAsync(
+        var source = await speechRepository.GetAssistantSpeechSourceAsync(
             messageId,
             cancellationToken);
 
@@ -31,7 +31,7 @@ public sealed class SpeechSynthesisService(
         var input = BuildValidatedInput(source);
         var result = await cosyVoice.SynthesizeAsync(input, cancellationToken);
 
-        await conversationStore.SaveTtsTelemetryAsync(
+        await speechRepository.SaveTtsTelemetryAsync(
             messageId,
             result,
             cancellationToken);

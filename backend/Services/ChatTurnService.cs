@@ -8,7 +8,8 @@ namespace AiAvatar.Backend.Services;
 
 public sealed class ChatTurnService(
     IChatDecisionGenerator decisionGenerator,
-    IConversationStore conversationStore,
+    IChatTurnRepository chatTurns,
+    IConversationHistoryReader historyReader,
     ConversationTurnGate turnGate)
 {
     public async Task<AvatarChatResponse> ExecuteAsync(
@@ -23,7 +24,7 @@ public sealed class ChatTurnService(
             request.TurnId,
             cancellationToken);
 
-        var existing = await conversationStore.TryGetCompletedTurnAsync(
+        var existing = await chatTurns.TryGetCompletedTurnAsync(
             request.TurnId,
             request.ConversationId,
             request.Message,
@@ -33,7 +34,7 @@ public sealed class ChatTurnService(
             return existing;
         }
 
-        var context = await conversationStore.BuildModelContextAsync(
+        var context = await historyReader.BuildModelContextAsync(
             request.ConversationId,
             request.Message,
             cancellationToken);
@@ -42,7 +43,7 @@ public sealed class ChatTurnService(
             context,
             cancellationToken);
 
-        return await conversationStore.CommitTurnAsync(
+        return await chatTurns.CommitTurnAsync(
             request.ConversationId,
             request.TurnId,
             request.Message,

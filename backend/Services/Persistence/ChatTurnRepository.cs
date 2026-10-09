@@ -1,4 +1,6 @@
-// This service owns backend conversation history and atomically persists completed chat turns plus speech telemetry through EF Core SQLite.
+// This repository owns the persistence consistency boundary for one completed chat turn:
+// idempotency lookup, request/turn conflict detection, atomic user+assistant+telemetry commit,
+// and recovery when a concurrent writer wins a uniqueness race.
 using AiAvatar.Backend.Data;
 using AiAvatar.Backend.Data.Entities;
 using AiAvatar.Backend.Errors;
@@ -7,11 +9,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AiAvatar.Backend.Services.Persistence;
 
-public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
+public sealed class ChatTurnRepository(AvatarDbContext db) : IChatTurnRepository
 {
-    private const int MaxConversationTitleLength = 80;
-    private const int MaxCompletedContextTurns = 5;
-
     public async Task<AvatarChatResponse?> TryGetCompletedTurnAsync(
         Guid turnId,
         Guid? requestedConversationId,
@@ -45,61 +44,6 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
         }
 
         return BuildResponse(assistant);
-    }
-
-    public async Task<IReadOnlyList<ChatMessage>> BuildModelContextAsync(
-        Guid? conversationId,
-        string currentUserMessage,
-        CancellationToken cancellationToken)
-    {
-        var current = new ChatMessage("user", currentUserMessage.Trim());
-        if (conversationId is null)
-        {
-            return [current];
-        }
-
-        if (!await db.Conversations
-                .AsNoTracking()
-                .AnyAsync(item => item.Id == conversationId.Value, cancellationToken))
-        {
-            throw new ResourceNotFoundException(
-                $"Conversation '{conversationId}' was not found in the local database.");
-        }
-
-        // Context selection is turn-aware. A persisted history item is eligible only when
-        // a user message and an assistant message share the same non-null TurnId. This
-        // prevents an assistant message from crossing the truncation boundary without its
-        // user prompt. Rows from the pre-TurnId schema are intentionally excluded because
-        // their turn boundary cannot be proven reliably.
-        var recentTurns = await (
-                from user in db.Messages.AsNoTracking()
-                join assistant in db.Messages.AsNoTracking()
-                    on new { user.ConversationId, user.TurnId }
-                    equals new { assistant.ConversationId, assistant.TurnId }
-                where
-                    user.ConversationId == conversationId.Value &&
-                    user.TurnId != null &&
-                    user.Role == "user" &&
-                    assistant.Role == "assistant"
-                orderby assistant.CreatedAtUtc descending, assistant.Id descending
-                select new
-                {
-                    UserContent = user.Content,
-                    AssistantContent = assistant.Content,
-                })
-            .Take(MaxCompletedContextTurns)
-            .ToListAsync(cancellationToken);
-
-        recentTurns.Reverse();
-        var history = new List<ChatMessage>(recentTurns.Count * 2 + 1);
-        foreach (var turn in recentTurns)
-        {
-            history.Add(new ChatMessage("user", turn.UserContent));
-            history.Add(new ChatMessage("assistant", turn.AssistantContent));
-        }
-
-        history.Add(current);
-        return history;
     }
 
     public async Task<AvatarChatResponse> CommitTurnAsync(
@@ -205,53 +149,6 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
         }
     }
 
-    public async Task<AssistantSpeechSource?> GetAssistantSpeechSourceAsync(
-        Guid messageId,
-        CancellationToken cancellationToken)
-    {
-        return await db.Messages
-            .AsNoTracking()
-            .Where(item => item.Id == messageId && item.Role == "assistant")
-            .Select(item => new AssistantSpeechSource(
-                item.Content,
-                item.Emotion,
-                item.EmotionIntensity))
-            .SingleOrDefaultAsync(cancellationToken);
-    }
-
-    public async Task SaveTtsTelemetryAsync(
-        Guid messageId,
-        SpeechSynthesisResult result,
-        CancellationToken cancellationToken)
-    {
-        await EnsureAssistantMessageExistsAsync(messageId, cancellationToken);
-
-        var entity = await db.TtsTelemetry
-            .SingleOrDefaultAsync(
-                item => item.MessageId == messageId,
-                cancellationToken);
-
-        if (entity is null)
-        {
-            entity = new TtsTelemetryEntity
-            {
-                MessageId = messageId,
-            };
-            db.TtsTelemetry.Add(entity);
-        }
-
-        entity.Model = result.Model;
-        entity.VoiceSource = result.VoiceSource;
-        entity.SynthesisDurationMs = result.SynthesisDurationMs;
-        entity.AudioDurationMs = null;
-        entity.RealTimeFactor = null;
-        entity.UsedCuda = result.UsedCuda;
-        entity.UsedFp16 = result.UsedFp16;
-        entity.CreatedAtUtc = DateTime.UtcNow;
-
-        await db.SaveChangesAsync(cancellationToken);
-    }
-
     private async Task<ConversationEntity> GetOrCreateConversationForCommitAsync(
         Guid? conversationId,
         string firstUserMessage,
@@ -275,28 +172,13 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
         var now = DateTime.UtcNow;
         var conversation = new ConversationEntity
         {
-            Title = BuildConversationTitle(firstUserMessage),
+            Title = ConversationTitlePolicy.FromFirstUserMessage(firstUserMessage),
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         };
 
         db.Conversations.Add(conversation);
         return conversation;
-    }
-
-    private async Task EnsureAssistantMessageExistsAsync(
-        Guid messageId,
-        CancellationToken cancellationToken)
-    {
-        var exists = await db.Messages.AnyAsync(
-            item => item.Id == messageId && item.Role == "assistant",
-            cancellationToken);
-
-        if (!exists)
-        {
-            throw new ResourceNotFoundException(
-                $"Assistant message '{messageId}' was not found in the local database.");
-        }
     }
 
     private static void EnsureTurnMatchesRequest(
@@ -340,28 +222,5 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
                 telemetry.LoadDurationMs,
                 telemetry.PromptTokens,
                 telemetry.OutputTokens));
-    }
-
-    private static string BuildConversationTitle(string firstUserMessage)
-    {
-        var title = firstUserMessage
-            .Replace('\r', ' ')
-            .Replace('\n', ' ')
-            .Replace('\t', ' ')
-            .Trim();
-
-        while (title.Contains("  ", StringComparison.Ordinal))
-        {
-            title = title.Replace("  ", " ", StringComparison.Ordinal);
-        }
-
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            return "New conversation";
-        }
-
-        return title.Length <= MaxConversationTitleLength
-            ? title
-            : $"{title[..(MaxConversationTitleLength - 1)]}…";
     }
 }

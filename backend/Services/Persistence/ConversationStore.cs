@@ -205,13 +205,18 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
         }
     }
 
-    public async Task<bool> AssistantMessageExistsAsync(
+    public async Task<AssistantSpeechSource?> GetAssistantSpeechSourceAsync(
         Guid messageId,
         CancellationToken cancellationToken)
     {
-        return await db.Messages.AnyAsync(
-            item => item.Id == messageId && item.Role == "assistant",
-            cancellationToken);
+        return await db.Messages
+            .AsNoTracking()
+            .Where(item => item.Id == messageId && item.Role == "assistant")
+            .Select(item => new AssistantSpeechSource(
+                item.Content,
+                item.Emotion,
+                item.EmotionIntensity))
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
     public async Task SaveTtsTelemetryAsync(
@@ -283,7 +288,11 @@ public sealed class ConversationStore(AvatarDbContext db) : IConversationStore
         Guid messageId,
         CancellationToken cancellationToken)
     {
-        if (!await AssistantMessageExistsAsync(messageId, cancellationToken))
+        var exists = await db.Messages.AnyAsync(
+            item => item.Id == messageId && item.Role == "assistant",
+            cancellationToken);
+
+        if (!exists)
         {
             throw new ResourceNotFoundException(
                 $"Assistant message '{messageId}' was not found in the local database.");

@@ -32,11 +32,11 @@ public sealed class CosyVoiceClient
     }
 
     public async Task<SpeechSynthesisResult> SynthesizeAsync(
-        SpeechSynthesisRequest request,
+        SpeechSynthesisInput input,
         CancellationToken cancellationToken)
     {
         var runtimeStatus = await WaitUntilReadyAsync(cancellationToken);
-        var payload = TtsSpeechPolicy.CreatePayload(request);
+        var payload = TtsSpeechPolicy.CreatePayload(input);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(15, _options.SynthesisTimeoutSeconds)));

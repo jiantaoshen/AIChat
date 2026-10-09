@@ -81,6 +81,12 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : I
             exception.Message,
             IsUnexpected: false),
 
+        SpeechSynthesisRejectedException => new(
+            StatusCodes.Status422UnprocessableEntity,
+            "Persisted speech data cannot be synthesized",
+            exception.Message,
+            IsUnexpected: false),
+
         LocalDependencyTimeoutException dependency => new(
             StatusCodes.Status504GatewayTimeout,
             $"{dependency.DependencyName} request timed out",

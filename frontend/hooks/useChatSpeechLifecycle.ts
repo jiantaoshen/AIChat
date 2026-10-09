@@ -63,10 +63,7 @@ export function useChatSpeechLifecycle({
     try {
       const result = await speak({
         messageId,
-        text: decision.speech,
         language: decision.language,
-        emotion: decision.emotion,
-        emotionIntensity: decision.emotionIntensity,
       });
       if (!isCurrentTurn(identity)) {
         return;

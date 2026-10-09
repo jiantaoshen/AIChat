@@ -16,7 +16,8 @@ export type SpeechPlaybackResult =
   | "unsupported"
   | "interrupted";
 
-interface AvatarSpeechRequest extends SpeechSynthesisRequest {
+interface AvatarSpeechRequest {
+  messageId: string;
   language: string;
 }
 
@@ -170,9 +171,6 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
       try {
         const speechRequest: SpeechSynthesisRequest = {
           messageId: request.messageId,
-          text: request.text,
-          emotion: request.emotion,
-          emotionIntensity: request.emotionIntensity,
         };
         const blob = await synthesizeSpeech(speechRequest, controller.signal);
 

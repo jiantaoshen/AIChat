@@ -1,4 +1,4 @@
-// This endpoint group validates speech HTTP input and delegates persisted-message synthesis plus telemetry to SpeechSynthesisService.
+// This endpoint group accepts only a persisted assistant message reference. Speech content and emotion are loaded by the backend from SQLite.
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Options;
 using AiAvatar.Backend.Services.Speech;
@@ -16,9 +16,7 @@ public static class SpeechEndpoints
             IOptions<CosyVoiceOptions> cosyVoiceOptions,
             CancellationToken cancellationToken) =>
         {
-            var options = cosyVoiceOptions.Value;
-
-            if (!options.Enabled)
+            if (!cosyVoiceOptions.Value.Enabled)
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status503ServiceUnavailable,
@@ -31,26 +29,8 @@ public static class SpeechEndpoints
                 return Results.BadRequest(new { error = "A persisted assistant messageId is required for speech." });
             }
 
-            if (string.IsNullOrWhiteSpace(request.Text))
-            {
-                return Results.BadRequest(new { error = "Speech text cannot be empty." });
-            }
-
-            if (request.Text.Length > options.MaxTextCharacters)
-            {
-                return Results.BadRequest(new
-                {
-                    error = $"Speech text exceeds the configured {options.MaxTextCharacters} character limit.",
-                });
-            }
-
-            if (!TtsSpeechPolicy.IsSupportedEmotion(request.Emotion))
-            {
-                return Results.BadRequest(new { error = $"Unsupported emotion: {request.Emotion}" });
-            }
-
             var result = await speechSynthesisService.SynthesizeAsync(
-                request,
+                request.MessageId,
                 cancellationToken);
 
             return Results.File(result.Audio, "audio/wav");

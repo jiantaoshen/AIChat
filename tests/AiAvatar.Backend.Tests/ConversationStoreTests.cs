@@ -182,6 +182,38 @@ public sealed class ConversationStoreTests
                 cancellationToken));
     }
 
+    [Fact]
+    public async Task GetAssistantSpeechSourceAsync_ReturnsPersistedContentAndEmotion()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var fixture = await SqliteFixture.CreateAsync(cancellationToken);
+        var conversation = new ConversationEntity { Title = "speech authority" };
+        fixture.Db.Conversations.Add(conversation);
+
+        var assistant = new MessageEntity
+        {
+            ConversationId = conversation.Id,
+            TurnId = Guid.NewGuid(),
+            Role = "assistant",
+            Content = "persisted authoritative speech",
+            Language = "en",
+            Emotion = "sad",
+            EmotionIntensity = 0.75,
+        };
+        fixture.Db.Messages.Add(assistant);
+        await fixture.Db.SaveChangesAsync(cancellationToken);
+
+        var store = new ConversationStore(fixture.Db);
+        var source = await store.GetAssistantSpeechSourceAsync(
+            assistant.Id,
+            cancellationToken);
+
+        Assert.NotNull(source);
+        Assert.Equal("persisted authoritative speech", source.Text);
+        Assert.Equal("sad", source.Emotion);
+        Assert.Equal(0.75, source.EmotionIntensity);
+    }
+
     private static MessageEntity Message(
         Guid conversationId,
         Guid turnId,

@@ -16,13 +16,12 @@ public sealed class TtsSpeechPolicyTests
         string emotion,
         double expectedSpeed)
     {
-        var request = new SpeechSynthesisRequest(
-            Guid.NewGuid(),
+        var input = new SpeechSynthesisInput(
             "  hello  ",
             emotion,
             1.0);
 
-        var payload = TtsSpeechPolicy.CreatePayload(request);
+        var payload = TtsSpeechPolicy.CreatePayload(input);
 
         Assert.Equal("hello", payload.Text);
         Assert.InRange(Math.Abs(payload.Speed - expectedSpeed), 0, 1e-10);
@@ -33,13 +32,12 @@ public sealed class TtsSpeechPolicyTests
     [Fact]
     public void CreatePayload_UnknownEmotionFallsBackToNeutral()
     {
-        var request = new SpeechSynthesisRequest(
-            Guid.NewGuid(),
+        var input = new SpeechSynthesisInput(
             "hello",
             "ecstatic",
             double.PositiveInfinity);
 
-        var payload = TtsSpeechPolicy.CreatePayload(request);
+        var payload = TtsSpeechPolicy.CreatePayload(input);
 
         Assert.Equal(1.0, payload.Speed);
         Assert.True(payload.Instruction.Contains("calm, natural, clear", StringComparison.Ordinal));

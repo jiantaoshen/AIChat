@@ -1,15 +1,15 @@
-// This file maps semantic avatar emotion into bounded CosyVoice instructions and speaking speed so the LLM never controls low-level TTS parameters directly.
+// This file maps backend-owned semantic avatar emotion into bounded CosyVoice instructions and speaking speed so the client never controls low-level TTS parameters.
 using AiAvatar.Backend.Models;
 
 namespace AiAvatar.Backend.Services.Speech;
 
 public static class TtsSpeechPolicy
 {
-    public static CosyVoiceSynthesisPayload CreatePayload(SpeechSynthesisRequest request)
+    public static CosyVoiceSynthesisPayload CreatePayload(SpeechSynthesisInput input)
     {
-        var text = request.Text.Trim();
-        var emotion = NormalizeEmotion(request.Emotion);
-        var intensity = Clamp01(request.EmotionIntensity);
+        var text = input.Text.Trim();
+        var emotion = NormalizeEmotion(input.Emotion);
+        var intensity = Clamp01(input.EmotionIntensity);
 
         var (instruction, baseSpeed, speedRange) = emotion switch
         {
@@ -41,9 +41,6 @@ public static class TtsSpeechPolicy
 
         var speed = Math.Clamp(baseSpeed + speedRange * intensity, 0.88, 1.12);
 
-        // Send only the semantic style instruction across the backend/service boundary.
-        // The Python CosyVoice3 wrapper owns model-specific prompt formatting such as
-        // the <|endofprompt|> delimiter, which prevents control text from becoming speech.
         return new CosyVoiceSynthesisPayload(text, instruction, speed);
     }
 

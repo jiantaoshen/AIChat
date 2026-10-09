@@ -56,7 +56,4 @@ export interface ChatRequest {
 
 export interface SpeechSynthesisRequest {
   messageId: string;
-  text: string;
-  emotion: Emotion;
-  emotionIntensity: number;
 }

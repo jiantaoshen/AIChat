@@ -16,6 +16,8 @@ public abstract class DomainException : Exception
 
 public sealed class ResourceNotFoundException(string message) : DomainException(message);
 
+public sealed class SpeechSynthesisRejectedException(string message) : DomainException(message);
+
 public abstract class LocalDependencyException : DomainException
 {
     protected LocalDependencyException(

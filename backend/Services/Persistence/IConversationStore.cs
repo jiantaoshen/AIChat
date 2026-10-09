@@ -23,7 +23,7 @@ public interface IConversationStore
         OllamaDecisionResult ollamaResult,
         CancellationToken cancellationToken);
 
-    Task<bool> AssistantMessageExistsAsync(
+    Task<AssistantSpeechSource?> GetAssistantSpeechSourceAsync(
         Guid messageId,
         CancellationToken cancellationToken);
 

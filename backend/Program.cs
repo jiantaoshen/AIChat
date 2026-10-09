@@ -25,6 +25,16 @@ builder.Services
     .Validate(
         options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _),
         "Ollama:BaseUrl must be an absolute URI.")
+    .Validate(
+        options => options.ContextLength > 0,
+        "Ollama:ContextLength must be greater than zero.")
+    .Validate(
+        options => options.MaxOutputTokens > 0 && options.MaxOutputTokens < options.ContextLength,
+        "Ollama:MaxOutputTokens must be greater than zero and smaller than ContextLength.")
+    .Validate(
+        options => options.ContextSafetyReserveTokens > 0 &&
+                   options.MaxOutputTokens + options.ContextSafetyReserveTokens < options.ContextLength,
+        "Ollama:ContextSafetyReserveTokens must leave room inside ContextLength after the output reserve.")
     .ValidateOnStart();
 builder.Services.Configure<CharacterOptions>(
     builder.Configuration.GetSection(CharacterOptions.SectionName));
@@ -54,6 +64,7 @@ builder.Services.AddDbContext<AvatarDbContext>(options =>
     options.UseSqlite(sqliteConnection.ConnectionString));
 builder.Services.AddScoped<IChatTurnRepository, ChatTurnRepository>();
 builder.Services.AddScoped<IConversationHistoryReader, ConversationHistoryReader>();
+builder.Services.AddSingleton<ConversationContextPolicy>();
 builder.Services.AddScoped<ISpeechRepository, SpeechRepository>();
 builder.Services.AddScoped<ChatTurnService>();
 builder.Services.AddSingleton<ConversationTurnGate>();
@@ -100,6 +111,10 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Force construction at startup so an impossible context budget (for example, a system
+// prompt that leaves no room for any user message) fails fast as a configuration error.
+_ = app.Services.GetRequiredService<ConversationContextPolicy>();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {

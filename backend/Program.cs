@@ -38,8 +38,22 @@ builder.Services
     .ValidateOnStart();
 builder.Services.Configure<CharacterOptions>(
     builder.Configuration.GetSection(CharacterOptions.SectionName));
-builder.Services.Configure<CosyVoiceOptions>(
-    builder.Configuration.GetSection(CosyVoiceOptions.SectionName));
+builder.Services
+    .AddOptions<CosyVoiceOptions>()
+    .Bind(builder.Configuration.GetSection(CosyVoiceOptions.SectionName))
+    .Validate(
+        CosyVoiceOptionsValidation.HasValidEndpoint,
+        "CosyVoice:Host must identify a valid HTTP host and CosyVoice:Port must be between 1 and 65535 when CosyVoice is enabled.")
+    .Validate(
+        CosyVoiceOptionsValidation.HasValidLimits,
+        "CosyVoice:StartupTimeoutSeconds, CosyVoice:SynthesisTimeoutSeconds, and CosyVoice:MaxTextCharacters must all be greater than zero when CosyVoice is enabled.")
+    .Validate(
+        CosyVoiceOptionsValidation.HasRequiredRuntimePaths,
+        "CosyVoice:CosyVoiceRepo, CosyVoice:ModelPath, CosyVoice:ReferenceAudioPath, and CosyVoice:ReferenceTextPath must be configured when CosyVoice is enabled.")
+    .Validate(
+        CosyVoiceOptionsValidation.HasRequiredAutoStartPaths,
+        "CosyVoice:PythonExecutable and CosyVoice:ServiceScript must be configured when CosyVoice AutoStart is enabled.")
+    .ValidateOnStart();
 
 var configuredDatabase = builder.Configuration.GetConnectionString("AvatarDatabase")
     ?? throw new InvalidOperationException(

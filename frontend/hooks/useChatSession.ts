@@ -6,10 +6,8 @@ import {
   chatSessionReducer,
   createInitialChatSessionState,
 } from "@/hooks/chatSessionState";
-import {
-  type TurnIdentity,
-  useChatSpeechLifecycle,
-} from "@/hooks/useChatSpeechLifecycle";
+import type { TurnIdentity } from "@/hooks/chatSpeechLifecyclePolicy";
+import { useChatSpeechLifecycle } from "@/hooks/useChatSpeechLifecycle";
 import { useChatTurnTransport } from "@/hooks/useChatTurnTransport";
 import { isOperationalStateBusy } from "@/lib/operationalState";
 import type { AvatarDecision, ChatMessage, OperationalState } from "@/types/chat";

@@ -3,17 +3,16 @@
 
 import { useCallback } from "react";
 import { useAvatarSpeech } from "@/hooks/useAvatarSpeech";
+import {
+  completeSpeechHold,
+  type TurnIdentity,
+} from "@/hooks/chatSpeechLifecyclePolicy";
 import { useNeutralDecisionTimer } from "@/hooks/useNeutralDecisionTimer";
 import { shouldForceSpeechStatusHold } from "@/lib/operationalState";
 import type { AvatarDecision } from "@/types/chat";
 
 const EXPRESSION_HOLD_WITHOUT_TTS_MS = 4500;
 const EXPRESSION_HOLD_AFTER_SPEECH_MS = 1500;
-
-export interface TurnIdentity {
-  sessionId: number;
-  turnGeneration: number;
-}
 
 interface UseChatSpeechLifecycleOptions {
   isCurrentTurn: (identity: TurnIdentity) => boolean;
@@ -42,11 +41,12 @@ export function useChatSpeechLifecycle({
 
   const handleNeutralTimer = useCallback(
     (sessionId: number, turnGeneration: number) => {
-      const identity = { sessionId, turnGeneration };
-      if (isCurrentTurn(identity)) {
-        clearUnsupportedState();
-        onNeutralReset();
-      }
+      completeSpeechHold({
+        identity: { sessionId, turnGeneration },
+        isCurrentTurn,
+        clearUnsupportedState,
+        onNeutralReset,
+      });
     },
     [clearUnsupportedState, isCurrentTurn, onNeutralReset],
   );

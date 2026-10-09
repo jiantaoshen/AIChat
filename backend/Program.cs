@@ -16,8 +16,16 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseUrls("http://localhost:5191");
 
-builder.Services.Configure<OllamaOptions>(
-    builder.Configuration.GetSection(OllamaOptions.SectionName));
+builder.Services
+    .AddOptions<OllamaOptions>()
+    .Bind(builder.Configuration.GetSection(OllamaOptions.SectionName))
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.Model),
+        "Ollama:Model must be configured in backend/appsettings.json or an explicit ASP.NET Core configuration override.")
+    .Validate(
+        options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _),
+        "Ollama:BaseUrl must be an absolute URI.")
+    .ValidateOnStart();
 builder.Services.Configure<CharacterOptions>(
     builder.Configuration.GetSection(CharacterOptions.SectionName));
 builder.Services.Configure<CosyVoiceOptions>(

@@ -1,9 +1,10 @@
-# This file performs one-time Windows 11 setup checks, starts Ollama, pulls the pinned Qwen 4B model, installs dependencies, and verifies the project.
-param(
-    [string]$Model = "qwen3:4b-instruct-2507-q4_K_M"
-)
-
+# This file performs one-time Windows 11 setup checks, starts Ollama, pulls the Qwen model configured by the backend, installs dependencies, and verifies the project.
 $ErrorActionPreference = "Stop"
+$projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "project-config.ps1")
+$ollamaConfig = Get-ProjectOllamaConfig -ProjectRoot $projectRoot
+$Model = $ollamaConfig.Model
+$OllamaBaseUrl = $ollamaConfig.BaseUrl
 $MinimumDotNetMajor = 10
 $RecommendedNodeMajor = 24
 $RecommendedOllama = [version]"0.34.2"
@@ -23,7 +24,7 @@ function Require-Command {
 
 function Test-OllamaServer {
     try {
-        Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 2 | Out-Null
+        Invoke-RestMethod -Uri "$OllamaBaseUrl/api/tags" -TimeoutSec 2 | Out-Null
         return $true
     }
     catch {
@@ -76,7 +77,7 @@ function Ensure-OllamaServer {
         Start-Sleep -Seconds 1
     }
 
-    throw "Ollama did not become reachable at http://localhost:11434. Open the Ollama Windows app and retry."
+    throw "Ollama did not become reachable at $OllamaBaseUrl. Open the Ollama Windows app and retry."
 }
 
 function Get-VersionFromText {
@@ -118,9 +119,10 @@ if ($null -ne $ollamaVersion -and $ollamaVersion -lt $RecommendedOllama) {
     Write-Host "Ollama: $ollamaVersion" -ForegroundColor Green
 }
 
+Write-Host "Qwen model (backend/appsettings.json): $Model" -ForegroundColor Green
 Ensure-OllamaServer
 
-$tags = Invoke-RestMethod -Uri "http://localhost:11434/api/tags"
+$tags = Invoke-RestMethod -Uri "$OllamaBaseUrl/api/tags"
 $modelInstalled = @($tags.models | ForEach-Object { $_.name }) -contains $Model
 
 if (-not $modelInstalled) {
@@ -133,7 +135,6 @@ if (-not $modelInstalled) {
     Write-Host "$Model is already installed." -ForegroundColor Green
 }
 
-$projectRoot = Split-Path -Parent $PSScriptRoot
 $frontendDir = Join-Path $projectRoot "frontend"
 $frontendLock = Join-Path $frontendDir "package-lock.json"
 $backendDir = Join-Path $projectRoot "backend"

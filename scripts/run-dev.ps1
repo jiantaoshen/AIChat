@@ -1,9 +1,10 @@
-# This file launches the Windows development environment, starts Ollama without blocking, verifies the configured model when available, then starts backend and frontend.
-param(
-    [string]$Model = "qwen3:4b-instruct-2507-q4_K_M"
-)
-
+# This file launches the Windows development environment, starts Ollama without blocking, reads the backend Ollama configuration, then starts backend and frontend.
 $ErrorActionPreference = "Stop"
+$projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "project-config.ps1")
+$ollamaConfig = Get-ProjectOllamaConfig -ProjectRoot $projectRoot
+$Model = $ollamaConfig.Model
+$OllamaBaseUrl = $ollamaConfig.BaseUrl
 
 function Require-Command {
     param(
@@ -59,7 +60,7 @@ function Start-OllamaWindowsApp {
 }
 
 function Ensure-OllamaApp {
-    if (Test-Url "http://localhost:11434/api/tags") {
+    if (Test-Url "$OllamaBaseUrl/api/tags") {
         return $true
     }
 
@@ -77,7 +78,7 @@ function Ensure-OllamaApp {
 
     # Never block startup indefinitely. Give Ollama a short window, then continue.
     for ($attempt = 0; $attempt -lt 15; $attempt++) {
-        if (Test-Url "http://localhost:11434/api/tags") {
+        if (Test-Url "$OllamaBaseUrl/api/tags") {
             return $true
         }
         Start-Sleep -Seconds 1
@@ -91,7 +92,6 @@ Require-Command "node" "Install Node.js 24 LTS or newer, then run SETUP_WINDOWS.
 Require-Command "npm" "npm is normally installed together with Node.js."
 Require-Command "ollama" "Install the current stable Ollama for Windows, then run SETUP_WINDOWS.cmd."
 
-$projectRoot = Split-Path -Parent $PSScriptRoot
 $backendDir = Join-Path $projectRoot "backend"
 $frontendDir = Join-Path $projectRoot "frontend"
 $frontendEnv = Join-Path $frontendDir ".env.local"
@@ -101,7 +101,7 @@ $frontendLock = Join-Path $frontendDir "package-lock.json"
 $ollamaReady = Ensure-OllamaApp
 
 if ($ollamaReady) {
-    $tags = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 3
+    $tags = Invoke-RestMethod -Uri "$OllamaBaseUrl/api/tags" -TimeoutSec 3
     $modelInstalled = @($tags.models | ForEach-Object { $_.name }) -contains $Model
 
     if (-not $modelInstalled) {
@@ -156,7 +156,7 @@ Start-Process -FilePath "powershell.exe" -WorkingDirectory $frontendDir -Argumen
 
 Write-Host ""
 Write-Host "Starting local Qwen avatar..." -ForegroundColor Green
-Write-Host "Ollama:   http://localhost:11434"
+Write-Host "Ollama:   $OllamaBaseUrl"
 Write-Host "Backend:  http://localhost:5191"
 Write-Host "Frontend: http://localhost:3000"
 Write-Host "Model:    $Model"

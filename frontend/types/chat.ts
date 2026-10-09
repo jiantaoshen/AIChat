@@ -41,11 +41,16 @@ export interface ModelTelemetry {
   outputTokens: number | null;
 }
 
+export interface SpeechCapability {
+  supported: boolean;
+}
+
 export interface AvatarChatResponse {
   conversationId: string;
   assistantMessageId: string;
   decision: AvatarDecision;
   telemetry: ModelTelemetry;
+  speechCapability: SpeechCapability;
 }
 
 export interface ChatRequest {

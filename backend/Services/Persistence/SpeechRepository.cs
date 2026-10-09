@@ -19,6 +19,7 @@ public sealed class SpeechRepository(AvatarDbContext db) : ISpeechRepository
             .Where(item => item.Id == messageId && item.Role == "assistant")
             .Select(item => new AssistantSpeechSource(
                 item.Content,
+                item.Language,
                 item.Emotion,
                 item.EmotionIntensity))
             .SingleOrDefaultAsync(cancellationToken);

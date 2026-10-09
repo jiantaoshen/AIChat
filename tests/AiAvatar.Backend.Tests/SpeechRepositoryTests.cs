@@ -35,6 +35,7 @@ public sealed class SpeechRepositoryTests
 
         Assert.NotNull(source);
         Assert.Equal("persisted authoritative speech", source.Text);
+        Assert.Equal("en", source.Language);
         Assert.Equal("sad", source.Emotion);
         Assert.Equal(0.75, source.EmotionIntensity);
     }

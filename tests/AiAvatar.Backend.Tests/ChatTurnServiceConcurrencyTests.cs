@@ -51,8 +51,11 @@ public sealed class ChatTurnServiceConcurrencyTests
 
         generator.ReleaseFirstCall();
 
-        await firstTask;
-        await secondTask;
+        var firstResponse = await firstTask;
+        var secondResponse = await secondTask;
+
+        Assert.True(firstResponse.SpeechCapability.Supported);
+        Assert.True(secondResponse.SpeechCapability.Supported);
 
         await generator.SecondCallStarted.Task.WaitAsync(cancellationToken);
 

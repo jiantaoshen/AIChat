@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using AiAvatar.Backend.Errors;
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Options;
 using AiAvatar.Backend.Services.Persistence;
@@ -29,6 +30,7 @@ public sealed class SpeechSynthesisServiceTests
         var repository = new FakeSpeechRepository(
             new AssistantSpeechSource(
                 "persisted authoritative speech",
+                "en",
                 "sad",
                 1.0));
         var handler = new CapturingCosyVoiceHandler();
@@ -59,9 +61,49 @@ public sealed class SpeechSynthesisServiceTests
         Assert.Equal(messageId, repository.SavedTelemetryMessageId);
     }
 
+    [Fact]
+    public async Task SynthesizeAsync_RejectsPersistedUnsupportedLanguageBeforeCosyVoiceCall()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var messageId = Guid.NewGuid();
+        var repository = new FakeSpeechRepository(
+            new AssistantSpeechSource(
+                "det här ska förbli text",
+                "sv",
+                "neutral",
+                0.2));
+        var handler = new CapturingCosyVoiceHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://127.0.0.1:8188"),
+        };
+        var options = Microsoft.Extensions.Options.Options.Create(
+            new CosyVoiceOptions
+            {
+                Enabled = true,
+                StartupTimeoutSeconds = 10,
+                SynthesisTimeoutSeconds = 15,
+                MaxTextCharacters = 800,
+            });
+        var cosyVoice = new CosyVoiceClient(
+            httpClient,
+            options,
+            NullLogger<CosyVoiceClient>.Instance);
+        var service = new SpeechSynthesisService(cosyVoice, repository, options);
+
+        var exception = await Assert.ThrowsAsync<SpeechSynthesisRejectedException>(
+            () => service.SynthesizeAsync(messageId, cancellationToken));
+
+        Assert.Contains("language", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, handler.SynthesizeCalls);
+        Assert.Null(repository.SavedTelemetryMessageId);
+    }
+
     private sealed class CapturingCosyVoiceHandler : HttpMessageHandler
     {
         public CosyVoiceSynthesisPayload? CapturedPayload { get; private set; }
+
+        public int SynthesizeCalls { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -82,6 +124,7 @@ public sealed class SpeechSynthesisServiceTests
 
             if (request.RequestUri?.AbsolutePath == "/synthesize")
             {
+                SynthesizeCalls += 1;
                 var json = await request.Content!.ReadAsStringAsync(cancellationToken);
                 CapturedPayload = JsonSerializer.Deserialize<CosyVoiceSynthesisPayload>(
                     json,

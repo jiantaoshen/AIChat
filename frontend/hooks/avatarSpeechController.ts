@@ -15,7 +15,7 @@ export type SpeechPlaybackResult =
 
 export interface AvatarSpeechRequest {
   messageId: string;
-  language: string;
+  supported: boolean;
 }
 
 export interface SpeechTransportRequest {
@@ -49,18 +49,6 @@ export interface AvatarSpeechControllerDependencies {
   onError?: (message: string) => void;
 }
 
-const COSYVOICE_SUPPORTED_LANGUAGES = new Set([
-  "zh",
-  "en",
-  "ja",
-  "ko",
-  "de",
-  "es",
-  "fr",
-  "it",
-  "ru",
-]);
-
 export class AvatarSpeechController {
   private readonly dependencies: AvatarSpeechControllerDependencies;
   private onError: ((message: string) => void) | undefined;
@@ -92,8 +80,10 @@ export class AvatarSpeechController {
   async speak(request: AvatarSpeechRequest): Promise<SpeechPlaybackResult> {
     this.stop();
 
-    const language = normalizeLanguageCode(request.language);
-    if (!COSYVOICE_SUPPORTED_LANGUAGES.has(language)) {
+    // `supported` is a backend-owned capability returned by the Chat API.
+    // It is only a frontend optimization; /api/speech re-checks persisted
+    // language server-side before contacting CosyVoice.
+    if (!request.supported) {
       this.clearReplayAudio();
       this.setState("unsupported");
       return "unsupported";
@@ -308,8 +298,4 @@ export class AvatarSpeechController {
     this.replayAvailable = hasReplay;
     this.dependencies.onReplayAvailabilityChanged(hasReplay);
   }
-}
-
-function normalizeLanguageCode(language: string): string {
-  return language.trim().toLowerCase().replace("_", "-").split("-", 1)[0];
 }

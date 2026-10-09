@@ -53,6 +53,13 @@ public sealed class SpeechSynthesisService(
                 $"The persisted assistant message exceeds the configured {_options.MaxTextCharacters} character TTS limit.");
         }
 
+        var language = TtsSpeechPolicy.NormalizeLanguageCode(source.Language);
+        if (!TtsSpeechPolicy.IsSupportedLanguage(language))
+        {
+            throw new SpeechSynthesisRejectedException(
+                "The persisted assistant message language is not supported by the backend TTS policy.");
+        }
+
         if (!TtsSpeechPolicy.IsSupportedEmotion(source.Emotion))
         {
             throw new SpeechSynthesisRejectedException(
@@ -71,6 +78,7 @@ public sealed class SpeechSynthesisService(
 
         return new SpeechSynthesisInput(
             source.Text,
+            language,
             source.Emotion!,
             source.EmotionIntensity.Value);
     }

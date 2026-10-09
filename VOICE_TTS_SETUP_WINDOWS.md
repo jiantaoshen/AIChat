@@ -14,20 +14,20 @@ speech + language + emotion + intensity
     ↓
 C# validation + TtsSpeechPolicy
     ↓
-supported language?
-    ├─ yes → CosyVoice3 local service → WAV → Browser Audio
-    └─ no  → text only
+backend speechCapability
+    ├─ supported   → frontend may request /api/speech
+    │                  ↓
+    │              backend re-checks persisted language
+    │                  ↓
+    │              CosyVoice3 → WAV → Browser Audio
+    └─ unsupported → text only
 ```
 
 The LLM does not control unrestricted audio parameters. C# maps semantic output into bounded TTS behavior.
 
-The current speech path supports:
+The canonical supported-language set is owned by backend `TtsSpeechPolicy`. It is intentionally not duplicated in TypeScript or this document. The Chat API returns `speechCapability.supported`, which the frontend consumes for UI behavior.
 
-```text
-zh / en / ja / ko / de / es / fr / it / ru
-```
-
-Unsupported response languages remain valid text responses and do not invoke CosyVoice. The frontend exposes an informational `unsupported` speech state instead of treating that case as a chat failure.
+Unsupported response languages remain valid text responses and do not invoke CosyVoice. The frontend exposes an informational `unsupported` speech state instead of treating that case as a chat failure. Direct calls to `/api/speech` are also protected: the backend reloads the persisted assistant message, checks its persisted language with `TtsSpeechPolicy`, and rejects unsupported languages before contacting CosyVoice.
 
 Text interaction does not depend on successful TTS. If synthesis fails, the assistant text remains available.
 

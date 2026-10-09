@@ -5,6 +5,36 @@ namespace AiAvatar.Backend.Services.Speech;
 
 public static class TtsSpeechPolicy
 {
+    // Single canonical language capability list for the application TTS path.
+    // Frontend code and documentation must not duplicate these values.
+    private static readonly HashSet<string> SupportedLanguages = new(StringComparer.Ordinal)
+    {
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "de",
+        "es",
+        "fr",
+        "it",
+        "ru",
+    };
+
+    public static bool IsSupportedLanguage(string? language) =>
+        SupportedLanguages.Contains(NormalizeLanguageCode(language));
+
+    public static string NormalizeLanguageCode(string? language)
+    {
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            return string.Empty;
+        }
+
+        var normalized = language.Trim().ToLowerInvariant().Replace('_', '-');
+        var separator = normalized.IndexOf('-');
+        return separator >= 0 ? normalized[..separator] : normalized;
+    }
+
     public static CosyVoiceSynthesisPayload CreatePayload(SpeechSynthesisInput input)
     {
         var text = input.Text.Trim();

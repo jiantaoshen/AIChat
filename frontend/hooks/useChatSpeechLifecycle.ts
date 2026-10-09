@@ -9,7 +9,7 @@ import {
 } from "@/hooks/chatSpeechLifecyclePolicy";
 import { useNeutralDecisionTimer } from "@/hooks/useNeutralDecisionTimer";
 import { shouldForceSpeechStatusHold } from "@/lib/operationalState";
-import type { AvatarDecision } from "@/types/chat";
+import type { AvatarDecision, SpeechCapability } from "@/types/chat";
 
 const EXPRESSION_HOLD_WITHOUT_TTS_MS = 4500;
 const EXPRESSION_HOLD_AFTER_SPEECH_MS = 1500;
@@ -56,6 +56,7 @@ export function useChatSpeechLifecycle({
   async function speakDecision(
     messageId: string,
     decision: AvatarDecision,
+    speechCapability: SpeechCapability,
     identity: TurnIdentity,
   ) {
     if (!decision.speech.trim()) {
@@ -66,7 +67,7 @@ export function useChatSpeechLifecycle({
     try {
       const result = await speak({
         messageId,
-        language: decision.language,
+        supported: speechCapability.supported,
       });
       if (!isCurrentTurn(identity)) {
         return;

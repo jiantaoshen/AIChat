@@ -18,6 +18,7 @@ public sealed class TtsSpeechPolicyTests
     {
         var input = new SpeechSynthesisInput(
             "  hello  ",
+            "en",
             emotion,
             1.0);
 
@@ -34,6 +35,7 @@ public sealed class TtsSpeechPolicyTests
     {
         var input = new SpeechSynthesisInput(
             "hello",
+            "en",
             "ecstatic",
             double.PositiveInfinity);
 
@@ -41,6 +43,27 @@ public sealed class TtsSpeechPolicyTests
 
         Assert.Equal(1.0, payload.Speed);
         Assert.True(payload.Instruction.Contains("calm, natural, clear", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("zh")]
+    [InlineData("en")]
+    [InlineData("EN-us")]
+    [InlineData("ja_JP")]
+    [InlineData("ru")]
+    public void IsSupportedLanguage_AcceptsBackendOwnedSupportedLanguages(string value)
+    {
+        Assert.True(TtsSpeechPolicy.IsSupportedLanguage(value));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("sv")]
+    [InlineData("sv-SE")]
+    [InlineData("und")]
+    public void IsSupportedLanguage_RejectsUnsupportedLanguages(string value)
+    {
+        Assert.False(TtsSpeechPolicy.IsSupportedLanguage(value));
     }
 
     [Theory]

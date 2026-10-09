@@ -3,6 +3,7 @@ using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Services.Concurrency;
 using AiAvatar.Backend.Services.Ollama;
 using AiAvatar.Backend.Services.Persistence;
+using AiAvatar.Backend.Services.Speech;
 
 namespace AiAvatar.Backend.Services;
 
@@ -31,7 +32,7 @@ public sealed class ChatTurnService(
             cancellationToken);
         if (existing is not null)
         {
-            return existing;
+            return WithSpeechCapability(existing);
         }
 
         var context = await historyReader.BuildModelContextAsync(
@@ -43,11 +44,20 @@ public sealed class ChatTurnService(
             context,
             cancellationToken);
 
-        return await chatTurns.CommitTurnAsync(
+        var committed = await chatTurns.CommitTurnAsync(
             request.ConversationId,
             request.TurnId,
             request.Message,
             ollamaResult,
             cancellationToken);
+
+        return WithSpeechCapability(committed);
     }
+
+    private static AvatarChatResponse WithSpeechCapability(AvatarChatResponse response) =>
+        response with
+        {
+            SpeechCapability = new SpeechCapability(
+                TtsSpeechPolicy.IsSupportedLanguage(response.Decision.Language)),
+        };
 }

@@ -40,12 +40,17 @@ ChatTurnService
         ├─ Assistant Message
         └─ LLM Telemetry
                     ↓
+          backend TTS capability
+        ├─ TtsSpeechPolicy owns language support
+        ├─ Chat API returns speechCapability
+        └─ /api/speech re-checks persisted language
+                    ↓
               Next.js UI
         ├─ reducer-owned session state
         ├─ stale async invalidation
-        └─ supported language?
-              ├─ yes → CosyVoice3 → WAV → Browser Audio
-              └─ no  → text only
+        └─ consumes speechCapability
+              ├─ supported   → request TTS → WAV → Browser Audio
+              └─ unsupported → text only
 ```
 
 Core design rules:
@@ -78,9 +83,9 @@ atomic SQLite commit
  ↓
 text response
  ↓
-language check
- ├─ supported   → synthesizing → speaking → idle
- └─ unsupported → text only    → idle
+backend TtsSpeechPolicy capability
+ ├─ supported   → frontend requests TTS → synthesizing → speaking → idle
+ └─ unsupported → text only → idle
 ```
 
 Text generation is single-flight. Speech synthesis and playback are interruptible: sending the next user message stops current speech and starts the next text turn.
@@ -116,7 +121,7 @@ Run the reproducible verification pipeline with:
 Documentation ownership is intentionally narrow to avoid duplicated setup instructions:
 
 - [WINDOWS_SETUP.md](WINDOWS_SETUP.md) — **canonical Windows installation, prerequisites, startup, verification, and recovery commands**.
-- [VOICE_TTS_SETUP_WINDOWS.md](VOICE_TTS_SETUP_WINDOWS.md) — **TTS-specific behavior only**: reference voice, supported languages, manual TTS health checks, and CosyVoice troubleshooting.
+- [VOICE_TTS_SETUP_WINDOWS.md](VOICE_TTS_SETUP_WINDOWS.md) — **TTS-specific behavior only**: reference voice, backend capability ownership, manual TTS health checks, and CosyVoice troubleshooting.
 - [PROJECT_NOTES.md](PROJECT_NOTES.md) — current engineering scope, responsibility boundaries, invariants, and code ownership.
 
 Do not copy installation requirements or setup command sequences into additional documents. Update the canonical owner and link to it instead.

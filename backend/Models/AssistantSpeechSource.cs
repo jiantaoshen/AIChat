@@ -3,5 +3,6 @@ namespace AiAvatar.Backend.Models;
 
 public sealed record AssistantSpeechSource(
     string Text,
+    string? Language,
     string? Emotion,
     double? EmotionIntensity);

@@ -23,7 +23,7 @@ test("unsupported speech hold expiry returns the current turn to idle and neutra
   const identity = { sessionId: 7, turnGeneration: 3 };
 
   assert.equal(
-    await controller.speak({ messageId: "assistant-sv", language: "sv" }),
+    await controller.speak({ messageId: "assistant-sv", supported: false }),
     "unsupported",
   );
   assert.equal(controller.speechState, "unsupported");
@@ -48,7 +48,7 @@ test("a stale speech hold callback cannot clear or neutralize the current turn",
   const controller = createUnsupportedController();
   let neutralResets = 0;
 
-  await controller.speak({ messageId: "assistant-sv", language: "sv" });
+  await controller.speak({ messageId: "assistant-sv", supported: false });
 
   const applied = completeSpeechHold({
     identity: { sessionId: 1, turnGeneration: 1 },

@@ -83,7 +83,7 @@ test("reset while TTS synthesis aborts the request and stale completion cannot r
     return pending.promise;
   });
 
-  const speaking = controller.speak({ messageId: "assistant-1", language: "en" });
+  const speaking = controller.speak({ messageId: "assistant-1", supported: true });
   assert.equal(controller.speechState, "synthesizing");
   assert.equal(observed.signal?.aborted, false);
 
@@ -104,7 +104,7 @@ test("reset while TTS synthesis aborts the request and stale completion cannot r
 test("a new send can interrupt active speech without waiting for audio onended", async () => {
   const { controller, audios } = createHarness();
 
-  const speaking = controller.speak({ messageId: "assistant-1", language: "en" });
+  const speaking = controller.speak({ messageId: "assistant-1", supported: true });
   await waitFor(() => audios.length === 1 && controller.speechState === "speaking");
 
   const audio = audios[0]!;
@@ -121,14 +121,14 @@ test("a new send can interrupt active speech without waiting for audio onended",
 test("a stale audio callback from the previous generation cannot end the new playback", async () => {
   const { controller, audios } = createHarness();
 
-  const first = controller.speak({ messageId: "assistant-1", language: "en" });
+  const first = controller.speak({ messageId: "assistant-1", supported: true });
   await waitFor(() => audios.length === 1 && controller.speechState === "speaking");
   const staleAudio = audios[0]!;
 
   controller.stop();
   assert.equal(await first, "interrupted");
 
-  const second = controller.speak({ messageId: "assistant-2", language: "en" });
+  const second = controller.speak({ messageId: "assistant-2", supported: true });
   await waitFor(() => audios.length === 2 && controller.speechState === "speaking");
   const currentAudio = audios[1]!;
 
@@ -142,17 +142,22 @@ test("a stale audio callback from the previous generation cannot end the new pla
   assert.equal(controller.speechState, "idle");
 });
 
-test("unsupported language is informational and returns to idle when the lifecycle hold expires", async () => {
-  const { controller, audios } = createHarness();
+test("backend-reported unsupported speech is informational and does not call TTS transport", async () => {
+  let synthesizeCalls = 0;
+  const { controller, audios } = createHarness(async () => {
+    synthesizeCalls += 1;
+    return new Blob(["should-not-run"]);
+  });
 
   const result = await controller.speak({
     messageId: "assistant-sv",
-    language: "sv-SE",
+    supported: false,
   });
 
   assert.equal(result, "unsupported");
   assert.equal(controller.speechState, "unsupported");
   assert.equal(controller.hasReplay, false);
+  assert.equal(synthesizeCalls, 0);
   assert.equal(audios.length, 0);
 
   // useChatSpeechLifecycle invokes this when the forced unsupported-status hold

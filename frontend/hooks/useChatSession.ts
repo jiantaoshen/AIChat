@@ -110,6 +110,7 @@ export function useChatSession() {
       await speakDecision(
         completed.response.assistantMessageId,
         completed.response.decision,
+        completed.response.speechCapability,
         identity,
       );
     } catch (caught) {

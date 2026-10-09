@@ -92,6 +92,15 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
     setHasReplay(true);
   }, []);
 
+  const clearReplayAudio = useCallback(() => {
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+
+    setHasReplay(false);
+  }, []);
+
   const playCurrentUrl = useCallback(async (): Promise<void> => {
     const url = audioUrlRef.current;
     if (!url) {
@@ -159,6 +168,9 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
 
       const language = normalizeLanguageCode(request.language);
       if (!COSYVOICE_SUPPORTED_LANGUAGES.has(language)) {
+        // The latest assistant message has no playable voice. Do not expose
+        // replay audio left over from an earlier supported reply.
+        clearReplayAudio();
         setSpeechState("unsupported");
         return "unsupported";
       }
@@ -199,7 +211,7 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
         throw caught;
       }
     },
-    [onError, playCurrentUrl, replaceAudioUrl, stopSpeech],
+    [clearReplayAudio, onError, playCurrentUrl, replaceAudioUrl, stopSpeech],
   );
 
   const replay = useCallback(async (): Promise<SpeechPlaybackResult> => {
@@ -221,16 +233,16 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
     }
   }, [onError, playCurrentUrl, stopSpeech]);
 
+  const clearUnsupportedState = useCallback(() => {
+    setSpeechState((current) =>
+      current === "unsupported" ? "idle" : current,
+    );
+  }, []);
+
   const clearSpeech = useCallback(() => {
     stopSpeech();
-
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
-    }
-
-    setHasReplay(false);
-  }, [stopSpeech]);
+    clearReplayAudio();
+  }, [clearReplayAudio, stopSpeech]);
 
   useEffect(() => {
     return () => {
@@ -253,6 +265,7 @@ export function useAvatarSpeech({ onError }: UseAvatarSpeechOptions = {}) {
     replay,
     stopSpeech,
     clearSpeech,
+    clearUnsupportedState,
   };
 }
 

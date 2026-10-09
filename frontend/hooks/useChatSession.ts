@@ -11,6 +11,7 @@ import {
   useChatSpeechLifecycle,
 } from "@/hooks/useChatSpeechLifecycle";
 import { useChatTurnTransport } from "@/hooks/useChatTurnTransport";
+import { isOperationalStateBusy } from "@/lib/operationalState";
 import type { AvatarDecision, ChatMessage, OperationalState } from "@/types/chat";
 
 export function useChatSession() {
@@ -54,7 +55,9 @@ export function useChatSession() {
 
   const operationalState: OperationalState =
     state.chatState !== "idle" ? state.chatState : speechState;
-  const isBusy = operationalState !== "idle" && operationalState !== "error";
+  // "unsupported" is informational and short-lived, so it must never lock
+  // composer/replay busy semantics while its hold timer is counting down.
+  const isBusy = isOperationalStateBusy(operationalState);
   // Text generation is single-flight; TTS remains interruptible by the next send.
   const canSend = state.input.trim().length > 0 && state.chatState !== "thinking";
   const canReplay = hasReplay && !isBusy;

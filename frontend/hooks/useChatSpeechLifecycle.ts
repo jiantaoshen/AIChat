@@ -4,6 +4,7 @@
 import { useCallback } from "react";
 import { useAvatarSpeech } from "@/hooks/useAvatarSpeech";
 import { useNeutralDecisionTimer } from "@/hooks/useNeutralDecisionTimer";
+import { shouldForceSpeechStatusHold } from "@/lib/operationalState";
 import type { AvatarDecision } from "@/types/chat";
 
 const EXPRESSION_HOLD_WITHOUT_TTS_MS = 4500;
@@ -36,16 +37,18 @@ export function useChatSpeechLifecycle({
     replay,
     stopSpeech,
     clearSpeech,
+    clearUnsupportedState,
   } = useAvatarSpeech({ onError: handleTtsError });
 
   const handleNeutralTimer = useCallback(
     (sessionId: number, turnGeneration: number) => {
       const identity = { sessionId, turnGeneration };
       if (isCurrentTurn(identity)) {
+        clearUnsupportedState();
         onNeutralReset();
       }
     },
-    [isCurrentTurn, onNeutralReset],
+    [clearUnsupportedState, isCurrentTurn, onNeutralReset],
   );
   const { clearNeutralResetTimer, scheduleNeutralReset } =
     useNeutralDecisionTimer(handleNeutralTimer);
@@ -75,6 +78,7 @@ export function useChatSpeechLifecycle({
           ? EXPRESSION_HOLD_AFTER_SPEECH_MS
           : EXPRESSION_HOLD_WITHOUT_TTS_MS,
         identity,
+        shouldForceSpeechStatusHold(result),
       );
     } catch {
       if (isCurrentTurn(identity)) {
@@ -113,12 +117,14 @@ export function useChatSpeechLifecycle({
     decision: AvatarDecision,
     delayMs: number,
     identity: TurnIdentity,
+    force = false,
   ) {
     scheduleNeutralReset(
       decision,
       delayMs,
       identity.sessionId,
       identity.turnGeneration,
+      force,
     );
   }
 

@@ -24,10 +24,15 @@ export function useNeutralDecisionTimer(
       delayMs: number,
       sessionId: number,
       turnGeneration: number,
+      force = false,
     ) => {
       clearNeutralResetTimer();
 
-      if (decision.emotion === "neutral" && decision.gesture === "none") {
+      if (
+        !force &&
+        decision.emotion === "neutral" &&
+        decision.gesture === "none"
+      ) {
         return;
       }
 

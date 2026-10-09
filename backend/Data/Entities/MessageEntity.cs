@@ -1,4 +1,4 @@
-// This entity stores one user or assistant message together with optional avatar semantics.
+// This entity stores one user or assistant message together with optional avatar semantics and its idempotent chat-turn identity.
 namespace AiAvatar.Backend.Data.Entities;
 
 public sealed class MessageEntity
@@ -9,9 +9,13 @@ public sealed class MessageEntity
 
     public ConversationEntity Conversation { get; set; } = null!;
 
+    public Guid? TurnId { get; set; }
+
     public string Role { get; set; } = "";
 
     public string Content { get; set; } = "";
+
+    public string? Language { get; set; }
 
     public string? Emotion { get; set; }
 

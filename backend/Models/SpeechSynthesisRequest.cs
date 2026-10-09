@@ -1,8 +1,4 @@
-// This file defines the browser-to-backend request used to synthesize one persisted assistant message with validated semantic emotion data.
+// This file defines the browser-to-backend speech request. The browser identifies a persisted assistant message; speech text and emotion remain server-authoritative.
 namespace AiAvatar.Backend.Models;
 
-public sealed record SpeechSynthesisRequest(
-    Guid MessageId,
-    string Text,
-    string Emotion,
-    double EmotionIntensity);
+public sealed record SpeechSynthesisRequest(Guid MessageId);

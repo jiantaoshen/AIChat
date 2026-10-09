@@ -1,12 +1,13 @@
 // This file is the thin Ollama HTTP client: it sends prepared requests, translates transport failures, and exposes model readiness checks.
 using System.Text.Json;
+using AiAvatar.Backend.Errors;
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Options;
 using Microsoft.Extensions.Options;
 
 namespace AiAvatar.Backend.Services.Ollama;
 
-public sealed class OllamaClient
+public sealed class OllamaClient : IChatDecisionGenerator
 {
     private readonly HttpClient _httpClient;
     private readonly OllamaRequestFactory _requestFactory;
@@ -29,21 +30,42 @@ public sealed class OllamaClient
         IReadOnlyList<ChatMessage> messages,
         CancellationToken cancellationToken)
     {
-        using var request = _requestFactory.CreateChatRequest(messages);
-        using var response = await _httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            throw new HttpRequestException(
-                BuildFriendlyOllamaError(response.StatusCode, responseBody));
-        }
+            using var request = _requestFactory.CreateChatRequest(messages);
+            using var response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
 
-        return _responseParser.Parse(responseBody);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new LocalDependencyUnavailableException(
+                    "Ollama",
+                    "Local Ollama could not complete the model request. Check that Ollama is running and the configured model is installed.",
+                    BuildFriendlyOllamaError(response.StatusCode, responseBody));
+            }
+
+            return _responseParser.Parse(responseBody);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new LocalDependencyTimeoutException(
+                "Ollama",
+                "Local Qwen inference timed out. Try again after the local model is ready.",
+                "The Ollama HTTP request exceeded the configured client timeout.",
+                exception);
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new LocalDependencyUnavailableException(
+                "Ollama",
+                "Local Ollama could not complete the model request. Check that Ollama is running and the configured model is installed.",
+                $"The Ollama HTTP request failed: {exception.Message}",
+                exception);
+        }
     }
 
     public async Task<(bool Reachable, bool ModelInstalled, string Message)> GetStatusAsync(

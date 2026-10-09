@@ -1,165 +1,120 @@
-// This hook owns one browser chat session: messages, backend requests, avatar decisions, TTS playback, errors, replay, and temporary-expression timing.
+// This hook orchestrates one browser chat session while transport, reducer state, speech, and timers own their separate lifecycles.
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useAvatarSpeech } from "@/hooks/useAvatarSpeech";
-import { sendChatRequest } from "@/lib/api";
-import type {
-  AvatarDecision,
-  ChatMessage,
-  ModelTelemetry,
-  OperationalState,
-} from "@/types/chat";
-
-const EXPRESSION_HOLD_WITHOUT_TTS_MS = 4500;
-const EXPRESSION_HOLD_AFTER_SPEECH_MS = 1500;
-
-type ChatState = "idle" | "thinking" | "error";
-
-const INITIAL_DECISION: AvatarDecision = {
-  speech: "",
-  language: "zh",
-  emotion: "neutral",
-  emotionIntensity: 0.22,
-  gesture: "none",
-  gestureIntensity: 0,
-};
-
-const INITIAL_MESSAGES: ChatMessage[] = [
-  {
-    role: "assistant",
-    content: "你好。想聊点什么？你也可以直接用 English 或 svenska。",
-  },
-];
+import { useCallback, useReducer, useRef } from "react";
+import {
+  chatSessionReducer,
+  createInitialChatSessionState,
+} from "@/hooks/chatSessionState";
+import type { TurnIdentity } from "@/hooks/chatSpeechLifecyclePolicy";
+import { useChatSpeechLifecycle } from "@/hooks/useChatSpeechLifecycle";
+import { useChatTurnTransport } from "@/hooks/useChatTurnTransport";
+import { isOperationalStateBusy } from "@/lib/operationalState";
+import type { AvatarDecision, ChatMessage, OperationalState } from "@/types/chat";
 
 export function useChatSession() {
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [input, setInput] = useState("");
-  const [decision, setDecision] = useState<AvatarDecision>(INITIAL_DECISION);
-  const [telemetry, setTelemetry] = useState<ModelTelemetry | null>(null);
-  const [chatState, setChatState] = useState<ChatState>("idle");
-  const [animationKey, setAnimationKey] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [ttsError, setTtsError] = useState<string | null>(null);
-  const [isLogOpen, setIsLogOpen] = useState(false);
-  const neutralResetTimerRef = useRef<number | null>(null);
-  // Identifies the latest user turn. A new message can interrupt TTS playback,
-  // so older speech completions must not schedule UI work for the new turn.
+  const [state, dispatch] = useReducer(
+    chatSessionReducer,
+    undefined,
+    createInitialChatSessionState,
+  );
+  const sessionIdRef = useRef(0);
   const turnGenerationRef = useRef(0);
+  const { executeTurn, resetTurnTransport } = useChatTurnTransport();
+
+  const isCurrentTurn = useCallback((identity: TurnIdentity) => {
+    return (
+      sessionIdRef.current === identity.sessionId &&
+      turnGenerationRef.current === identity.turnGeneration
+    );
+  }, []);
+
+  const handleTtsError = useCallback((message: string | null) => {
+    dispatch({ type: "ttsErrorChanged", message });
+  }, []);
+  const handleNeutralReset = useCallback(() => {
+    dispatch({ type: "neutralReset" });
+  }, []);
 
   const {
     speechState,
     hasReplay,
-    speak,
-    replay,
+    speakDecision,
+    replayDecision,
+    scheduleWithoutSpeechReset,
     stopSpeech,
     clearSpeech,
-  } = useAvatarSpeech({
-    onError: setTtsError,
+    clearNeutralResetTimer,
+  } = useChatSpeechLifecycle({
+    isCurrentTurn,
+    onNeutralReset: handleNeutralReset,
+    onTtsError: handleTtsError,
   });
 
   const operationalState: OperationalState =
-    chatState !== "idle" ? chatState : speechState;
-  const isBusy = operationalState !== "idle" && operationalState !== "error";
-  // Text generation itself remains single-flight, but TTS synthesis/playback is
-  // interruptible: typing and sending the next message should stop the voice.
-  const canSend = input.trim().length > 0 && chatState !== "thinking";
+    state.chatState !== "idle" ? state.chatState : speechState;
+  // "unsupported" is informational and short-lived, so it must never lock
+  // composer/replay busy semantics while its hold timer is counting down.
+  const isBusy = isOperationalStateBusy(operationalState);
+  // Text generation is single-flight; TTS remains interruptible by the next send.
+  const canSend = state.input.trim().length > 0 && state.chatState !== "thinking";
   const canReplay = hasReplay && !isBusy;
 
-  const latestAssistantMessage = [...messages]
+  const latestAssistantMessage = [...state.messages]
     .reverse()
     .find((message) => message.role === "assistant");
-
   const visibleReply =
     operationalState === "thinking"
       ? "……"
-      : decision.speech ||
+      : state.decision.speech ||
         latestAssistantMessage?.content ||
-        (error ? "本地服务似乎没有正常回应。请检查右侧状态。" : "");
-
-  useEffect(() => {
-    return () => {
-      if (neutralResetTimerRef.current !== null) {
-        window.clearTimeout(neutralResetTimerRef.current);
-      }
-    };
-  }, []);
+        (state.error ? "本地服务似乎没有正常回应。请检查右侧状态。" : "");
 
   async function sendMessage() {
-    const text = input.trim();
-    if (!text || chatState === "thinking") {
+    const text = state.input.trim();
+    if (!text || state.chatState === "thinking") {
       return;
     }
 
-    const turnGeneration = ++turnGenerationRef.current;
-    stopSpeech();
-    clearNeutralResetTimer();
-
+    const sessionId = sessionIdRef.current;
     const userMessage: ChatMessage = { role: "user", content: text };
-    const nextMessages = [...messages, userMessage];
-
-    setMessages(nextMessages);
-    setInput("");
-    setError(null);
-    setTtsError(null);
-    setChatState("thinking");
-    bumpAnimation();
+    let identity: TurnIdentity | null = null;
 
     try {
-      const response = await sendChatRequest({
-        conversationId,
-        messages: nextMessages,
+      const completed = await executeTurn({
+        sessionId,
+        conversationId: state.conversationId,
+        message: text,
+        onStart: () => {
+          // This callback runs only after the transport synchronously acquires
+          // the single-flight text-turn slot. A duplicate send rejected by the
+          // controller must not mutate turn identity, interrupt speech, or add
+          // an optimistic user message.
+          identity = {
+            sessionId,
+            turnGeneration: ++turnGenerationRef.current,
+          };
+          stopSpeech();
+          clearNeutralResetTimer();
+          dispatch({ type: "sendStarted", userMessage });
+        },
       });
 
-      if (turnGeneration !== turnGenerationRef.current) {
+      // null means either the execute was rejected because another text turn
+      // already owns the transport, or this turn became stale after reset.
+      if (!completed || identity === null || !isCurrentTurn(identity)) {
         return;
       }
 
-      setConversationId(response.conversationId);
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", content: response.decision.speech },
-      ]);
-      setDecision(response.decision);
-      setTelemetry(response.telemetry);
-      setChatState("idle");
-      bumpAnimation();
-
-      if (!response.decision.speech.trim()) {
-        scheduleNeutralReset(response.decision, EXPRESSION_HOLD_WITHOUT_TTS_MS);
-        return;
-      }
-
-      try {
-        const speechResult = await speak({
-          messageId: response.assistantMessageId,
-          text: response.decision.speech,
-          language: response.decision.language,
-          emotion: response.decision.emotion,
-          emotionIntensity: response.decision.emotionIntensity,
-        });
-
-        if (turnGeneration !== turnGenerationRef.current) {
-          return;
-        }
-
-        scheduleNeutralReset(
-          response.decision,
-          speechResult === "completed"
-            ? EXPRESSION_HOLD_AFTER_SPEECH_MS
-            : EXPRESSION_HOLD_WITHOUT_TTS_MS,
-        );
-      } catch {
-        // A TTS failure must not discard a successful text response.
-        if (turnGeneration !== turnGenerationRef.current) {
-          return;
-        }
-
-        scheduleNeutralReset(response.decision, EXPRESSION_HOLD_WITHOUT_TTS_MS);
-      }
+      dispatch({ type: "sendSucceeded", response: completed.response });
+      await speakDecision(
+        completed.response.assistantMessageId,
+        completed.response.decision,
+        completed.response.speechCapability,
+        identity,
+      );
     } catch (caught) {
-      if (turnGeneration !== turnGenerationRef.current) {
+      if (identity === null || !isCurrentTurn(identity)) {
         return;
       }
 
@@ -174,11 +129,13 @@ export function useChatSession() {
         gestureIntensity: 0,
       };
 
-      setError(message);
-      setDecision(fallbackDecision);
-      setChatState("error");
-      bumpAnimation();
-      scheduleNeutralReset(fallbackDecision, EXPRESSION_HOLD_WITHOUT_TTS_MS);
+      dispatch({
+        type: "sendFailed",
+        message,
+        decision: fallbackDecision,
+        retryMessage: text,
+      });
+      scheduleWithoutSpeechReset(fallbackDecision, identity);
     }
   }
 
@@ -187,88 +144,40 @@ export function useChatSession() {
       return;
     }
 
-    clearNeutralResetTimer();
-    setTtsError(null);
-
-    try {
-      await replay();
-      scheduleNeutralReset(decision, EXPRESSION_HOLD_AFTER_SPEECH_MS);
-    } catch {
-      // useAvatarSpeech already exposes the readable playback error.
-    }
+    const identity: TurnIdentity = {
+      sessionId: sessionIdRef.current,
+      turnGeneration: turnGenerationRef.current,
+    };
+    await replayDecision(state.decision, identity);
   }
 
   function resetConversation() {
+    // Identity changes first: cancellation is best-effort, identity is the final
+    // correctness barrier against already-resolved stale Promise callbacks.
+    sessionIdRef.current += 1;
     turnGenerationRef.current += 1;
+    resetTurnTransport();
     clearSpeech();
     clearNeutralResetTimer();
-    setMessages(INITIAL_MESSAGES);
-    setConversationId(null);
-    setInput("");
-    setDecision(INITIAL_DECISION);
-    setTelemetry(null);
-    setChatState("idle");
-    setError(null);
-    setTtsError(null);
-    setIsLogOpen(false);
-    bumpAnimation();
-  }
-
-  function scheduleNeutralReset(
-    latestDecision: AvatarDecision,
-    delayMs: number,
-  ) {
-    clearNeutralResetTimer();
-
-    if (
-      latestDecision.emotion === "neutral" &&
-      latestDecision.gesture === "none"
-    ) {
-      return;
-    }
-
-    neutralResetTimerRef.current = window.setTimeout(() => {
-      setDecision((current) => ({
-        ...current,
-        emotion: "neutral",
-        emotionIntensity: INITIAL_DECISION.emotionIntensity,
-        gesture: "none",
-        gestureIntensity: 0,
-      }));
-      bumpAnimation();
-      neutralResetTimerRef.current = null;
-    }, delayMs);
-  }
-
-  function clearNeutralResetTimer() {
-    if (neutralResetTimerRef.current === null) {
-      return;
-    }
-
-    window.clearTimeout(neutralResetTimerRef.current);
-    neutralResetTimerRef.current = null;
-  }
-
-  function bumpAnimation() {
-    setAnimationKey((current) => current + 1);
+    dispatch({ type: "reset" });
   }
 
   return {
-    messages,
-    input,
-    setInput,
-    decision,
-    telemetry,
+    messages: state.messages,
+    input: state.input,
+    setInput: (value: string) => dispatch({ type: "inputChanged", value }),
+    decision: state.decision,
+    telemetry: state.telemetry,
     operationalState,
-    animationKey,
-    error,
-    ttsError,
+    animationKey: state.animationKey,
+    error: state.error,
+    ttsError: state.ttsError,
     speechState,
     visibleReply,
     canSend,
     canReplay,
-    isLogOpen,
-    setIsLogOpen,
+    isLogOpen: state.isLogOpen,
+    setIsLogOpen: (open: boolean) => dispatch({ type: "logOpenChanged", open }),
     sendMessage,
     replayVoice,
     resetConversation,

@@ -1,15 +1,45 @@
-// This file maps semantic avatar emotion into bounded CosyVoice instructions and speaking speed so the LLM never controls low-level TTS parameters directly.
+// This file maps backend-owned semantic avatar emotion into bounded CosyVoice instructions and speaking speed so the client never controls low-level TTS parameters.
 using AiAvatar.Backend.Models;
 
 namespace AiAvatar.Backend.Services.Speech;
 
 public static class TtsSpeechPolicy
 {
-    public static CosyVoiceSynthesisPayload CreatePayload(SpeechSynthesisRequest request)
+    // Single canonical language capability list for the application TTS path.
+    // Frontend code and documentation must not duplicate these values.
+    private static readonly HashSet<string> SupportedLanguages = new(StringComparer.Ordinal)
     {
-        var text = request.Text.Trim();
-        var emotion = NormalizeEmotion(request.Emotion);
-        var intensity = Clamp01(request.EmotionIntensity);
+        "zh",
+        "en",
+        "ja",
+        "ko",
+        "de",
+        "es",
+        "fr",
+        "it",
+        "ru",
+    };
+
+    public static bool IsSupportedLanguage(string? language) =>
+        SupportedLanguages.Contains(NormalizeLanguageCode(language));
+
+    public static string NormalizeLanguageCode(string? language)
+    {
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            return string.Empty;
+        }
+
+        var normalized = language.Trim().ToLowerInvariant().Replace('_', '-');
+        var separator = normalized.IndexOf('-');
+        return separator >= 0 ? normalized[..separator] : normalized;
+    }
+
+    public static CosyVoiceSynthesisPayload CreatePayload(SpeechSynthesisInput input)
+    {
+        var text = input.Text.Trim();
+        var emotion = NormalizeEmotion(input.Emotion);
+        var intensity = Clamp01(input.EmotionIntensity);
 
         var (instruction, baseSpeed, speedRange) = emotion switch
         {
@@ -41,9 +71,6 @@ public static class TtsSpeechPolicy
 
         var speed = Math.Clamp(baseSpeed + speedRange * intensity, 0.88, 1.12);
 
-        // Send only the semantic style instruction across the backend/service boundary.
-        // The Python CosyVoice3 wrapper owns model-specific prompt formatting such as
-        // the <|endofprompt|> delimiter, which prevents control text from becoming speech.
         return new CosyVoiceSynthesisPayload(text, instruction, speed);
     }
 

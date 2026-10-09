@@ -1,8 +1,10 @@
-// This file is the backend composition root: it configures options, persistence, HTTP clients, CORS, database startup, and the three endpoint groups.
+// This file is the backend composition root: it configures options, persistence, HTTP clients, centralized ProblemDetails handling, CORS, database startup, and endpoint groups.
 using AiAvatar.Backend.Data;
 using AiAvatar.Backend.Endpoints;
+using AiAvatar.Backend.Infrastructure;
 using AiAvatar.Backend.Options;
 using AiAvatar.Backend.Services;
+using AiAvatar.Backend.Services.Concurrency;
 using AiAvatar.Backend.Services.Ollama;
 using AiAvatar.Backend.Services.Persistence;
 using AiAvatar.Backend.Services.Speech;
@@ -14,12 +16,44 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseUrls("http://localhost:5191");
 
-builder.Services.Configure<OllamaOptions>(
-    builder.Configuration.GetSection(OllamaOptions.SectionName));
+builder.Services
+    .AddOptions<OllamaOptions>()
+    .Bind(builder.Configuration.GetSection(OllamaOptions.SectionName))
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.Model),
+        "Ollama:Model must be configured in backend/appsettings.json or an explicit ASP.NET Core configuration override.")
+    .Validate(
+        options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _),
+        "Ollama:BaseUrl must be an absolute URI.")
+    .Validate(
+        options => options.ContextLength > 0,
+        "Ollama:ContextLength must be greater than zero.")
+    .Validate(
+        options => options.MaxOutputTokens > 0 && options.MaxOutputTokens < options.ContextLength,
+        "Ollama:MaxOutputTokens must be greater than zero and smaller than ContextLength.")
+    .Validate(
+        options => options.ContextSafetyReserveTokens > 0 &&
+                   options.MaxOutputTokens + options.ContextSafetyReserveTokens < options.ContextLength,
+        "Ollama:ContextSafetyReserveTokens must leave room inside ContextLength after the output reserve.")
+    .ValidateOnStart();
 builder.Services.Configure<CharacterOptions>(
     builder.Configuration.GetSection(CharacterOptions.SectionName));
-builder.Services.Configure<CosyVoiceOptions>(
-    builder.Configuration.GetSection(CosyVoiceOptions.SectionName));
+builder.Services
+    .AddOptions<CosyVoiceOptions>()
+    .Bind(builder.Configuration.GetSection(CosyVoiceOptions.SectionName))
+    .Validate(
+        CosyVoiceOptionsValidation.HasValidEndpoint,
+        "CosyVoice:Host must identify a valid HTTP host and CosyVoice:Port must be between 1 and 65535 when CosyVoice is enabled.")
+    .Validate(
+        CosyVoiceOptionsValidation.HasValidLimits,
+        "CosyVoice:StartupTimeoutSeconds, CosyVoice:SynthesisTimeoutSeconds, and CosyVoice:MaxTextCharacters must all be greater than zero when CosyVoice is enabled.")
+    .Validate(
+        CosyVoiceOptionsValidation.HasRequiredRuntimePaths,
+        "CosyVoice:CosyVoiceRepo, CosyVoice:ModelPath, CosyVoice:ReferenceAudioPath, and CosyVoice:ReferenceTextPath must be configured when CosyVoice is enabled.")
+    .Validate(
+        CosyVoiceOptionsValidation.HasRequiredAutoStartPaths,
+        "CosyVoice:PythonExecutable and CosyVoice:ServiceScript must be configured when CosyVoice AutoStart is enabled.")
+    .ValidateOnStart();
 
 var configuredDatabase = builder.Configuration.GetConnectionString("AvatarDatabase")
     ?? throw new InvalidOperationException(
@@ -42,7 +76,26 @@ sqliteConnection.ForeignKeys = true;
 
 builder.Services.AddDbContext<AvatarDbContext>(options =>
     options.UseSqlite(sqliteConnection.ConnectionString));
-builder.Services.AddScoped<IConversationStore, ConversationStore>();
+builder.Services.AddScoped<IChatTurnRepository, ChatTurnRepository>();
+builder.Services.AddScoped<IConversationHistoryReader, ConversationHistoryReader>();
+builder.Services.AddSingleton<ConversationContextPolicy>();
+builder.Services.AddScoped<ISpeechRepository, SpeechRepository>();
+builder.Services.AddScoped<ChatTurnService>();
+builder.Services.AddSingleton<ConversationTurnGate>();
+builder.Services.AddScoped<SpeechSynthesisService>();
+builder.Services.AddSingleton<TtsTelemetryQueue>();
+builder.Services.AddSingleton<ITtsTelemetrySink>(serviceProvider =>
+    serviceProvider.GetRequiredService<TtsTelemetryQueue>());
+builder.Services.AddHostedService<TtsTelemetryBackgroundService>();
+
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+    };
+});
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
 builder.Services.AddSingleton<OllamaRequestFactory>();
 builder.Services.AddSingleton<OllamaResponseParser>();
@@ -50,6 +103,8 @@ builder.Services.AddHttpClient<OllamaClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(120);
 });
+builder.Services.AddTransient<IChatDecisionGenerator>(serviceProvider =>
+    serviceProvider.GetRequiredService<OllamaClient>());
 
 builder.Services.AddHttpClient<CosyVoiceClient>((serviceProvider, client) =>
 {
@@ -75,6 +130,10 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Force construction at startup so an impossible context budget (for example, a system
+// prompt that leaves no room for any user message) fails fast as a configuration error.
+_ = app.Services.GetRequiredService<ConversationContextPolicy>();
+
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var database = scope.ServiceProvider.GetRequiredService<AvatarDbContext>();
@@ -82,6 +141,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await database.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
 }
 
+app.UseExceptionHandler();
 app.UseCors("NextJsDevelopment");
 app.MapHealthEndpoints();
 app.MapChatEndpoints();

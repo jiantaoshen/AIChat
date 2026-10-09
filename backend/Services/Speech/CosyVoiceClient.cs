@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json;
+using AiAvatar.Backend.Errors;
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Options;
 using Microsoft.Extensions.Options;
@@ -31,56 +32,80 @@ public sealed class CosyVoiceClient
     }
 
     public async Task<SpeechSynthesisResult> SynthesizeAsync(
-        SpeechSynthesisRequest request,
+        SpeechSynthesisInput input,
         CancellationToken cancellationToken)
     {
         var runtimeStatus = await WaitUntilReadyAsync(cancellationToken);
-        var payload = TtsSpeechPolicy.CreatePayload(request);
+        var payload = TtsSpeechPolicy.CreatePayload(input);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(15, _options.SynthesisTimeoutSeconds)));
 
-        var stopwatch = Stopwatch.StartNew();
-        using var response = await _httpClient.PostAsJsonAsync(
-            "/synthesize",
-            payload,
-            timeout.Token);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            var body = await response.Content.ReadAsStringAsync(timeout.Token);
-            throw new HttpRequestException(
-                $"CosyVoice3 returned HTTP {(int)response.StatusCode}: {body.Trim()}");
+            var stopwatch = Stopwatch.StartNew();
+            using var response = await _httpClient.PostAsJsonAsync(
+                "/synthesize",
+                payload,
+                timeout.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(timeout.Token);
+                throw new LocalDependencyUnavailableException(
+                    "CosyVoice3",
+                    "Local CosyVoice3 could not synthesize speech. Check the local TTS service and try again.",
+                    $"CosyVoice3 returned HTTP {(int)response.StatusCode}: {body.Trim()}");
+            }
+
+            var audio = await response.Content.ReadAsByteArrayAsync(timeout.Token);
+            stopwatch.Stop();
+
+            if (audio.Length == 0)
+            {
+                throw new LocalDependencyUnavailableException(
+                    "CosyVoice3",
+                    "Local CosyVoice3 returned no playable audio. Check the local TTS service and try again.",
+                    "CosyVoice3 returned an empty audio response.");
+            }
+
+            var model = ReadHeader(response, "X-CosyVoice-Model")
+                ?? runtimeStatus.Model
+                ?? Path.GetFileName(_options.ModelPath.TrimEnd('/', '\\'))
+                ?? "CosyVoice3";
+
+            var voiceSource = ReadHeader(response, "X-CosyVoice-Voice-Source")
+                ?? runtimeStatus.VoiceSource;
+
+            _logger.LogInformation(
+                "Local TTS completed in {DurationMs} ms and returned {AudioBytes} bytes.",
+                stopwatch.ElapsedMilliseconds,
+                audio.Length);
+
+            return new SpeechSynthesisResult(
+                audio,
+                stopwatch.ElapsedMilliseconds,
+                model,
+                voiceSource,
+                runtimeStatus.CudaAvailable,
+                UsedFp16: false);
         }
-
-        var audio = await response.Content.ReadAsByteArrayAsync(timeout.Token);
-        stopwatch.Stop();
-
-        if (audio.Length == 0)
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new HttpRequestException("CosyVoice3 returned an empty audio response.");
+            throw new LocalDependencyTimeoutException(
+                "CosyVoice3",
+                "Local CosyVoice3 synthesis timed out. Try again after the TTS service is ready.",
+                $"CosyVoice3 synthesis exceeded the configured {_options.SynthesisTimeoutSeconds} second timeout.",
+                exception);
         }
-
-        var model = ReadHeader(response, "X-CosyVoice-Model")
-            ?? runtimeStatus.Model
-            ?? Path.GetFileName(_options.ModelPath.TrimEnd('/', '\\'))
-            ?? "CosyVoice3";
-
-        var voiceSource = ReadHeader(response, "X-CosyVoice-Voice-Source")
-            ?? runtimeStatus.VoiceSource;
-
-        _logger.LogInformation(
-            "Local TTS completed in {DurationMs} ms and returned {AudioBytes} bytes.",
-            stopwatch.ElapsedMilliseconds,
-            audio.Length);
-
-        return new SpeechSynthesisResult(
-            audio,
-            stopwatch.ElapsedMilliseconds,
-            model,
-            voiceSource,
-            runtimeStatus.CudaAvailable,
-            UsedFp16: false);
+        catch (HttpRequestException exception)
+        {
+            throw new LocalDependencyUnavailableException(
+                "CosyVoice3",
+                "Local CosyVoice3 could not synthesize speech. Check the local TTS service and try again.",
+                $"The CosyVoice3 HTTP request failed: {exception.Message}",
+                exception);
+        }
     }
 
     private async Task<CosyVoiceRuntimeStatus> WaitUntilReadyAsync(
@@ -94,6 +119,14 @@ public sealed class CosyVoiceClient
             cancellationToken.ThrowIfCancellationRequested();
 
             var status = await ReadRuntimeStatusAsync(cancellationToken);
+            if (status.IncompatibilityReason is not null)
+            {
+                throw new LocalDependencyUnavailableException(
+                    "CosyVoice3",
+                    "The local TTS port is occupied by an incompatible CosyVoice service. Stop the stale process and restart TTS.",
+                    status.IncompatibilityReason);
+            }
+
             if (status.Ready)
             {
                 return status;
@@ -102,8 +135,10 @@ public sealed class CosyVoiceClient
             await Task.Delay(750, cancellationToken);
         }
 
-        throw new HttpRequestException(
-            "Local CosyVoice3 service is not ready. Run SETUP_COSYVOICE_WINDOWS.cmd and check VOICE_TTS_SETUP_WINDOWS.md.");
+        throw new LocalDependencyUnavailableException(
+            "CosyVoice3",
+            "Local CosyVoice3 is not ready. See WINDOWS_SETUP.md for installation and VOICE_TTS_SETUP_WINDOWS.md for TTS troubleshooting.",
+            $"CosyVoice3 did not report ready within {_options.StartupTimeoutSeconds} seconds.");
     }
 
     private async Task<CosyVoiceRuntimeStatus> ReadRuntimeStatusAsync(
@@ -131,18 +166,39 @@ public sealed class CosyVoiceClient
                 cancellationToken: timeout.Token);
 
             var root = document.RootElement;
-            var ready = root.TryGetProperty("ready", out var readyElement)
-                && readyElement.ValueKind == JsonValueKind.True;
+            var snapshot = new CosyVoiceHealthSnapshot
+            {
+                Service = ReadNullableString(root, "service"),
+                ContractVersion = ReadNullableInt32(root, "contractVersion"),
+                Ready = root.TryGetProperty("ready", out var readyElement)
+                    && readyElement.ValueKind == JsonValueKind.True,
+                Model = ReadNullableString(root, "model"),
+                ModelPath = ReadNullableString(root, "modelPath"),
+                VoiceSource = ReadNullableString(root, "voiceSource"),
+                ReferenceWavPath = ReadNullableString(root, "referenceWavPath"),
+                ReferenceTextPath = ReadNullableString(root, "referenceTextPath"),
+            };
 
-            var model = ReadNullableString(root, "model");
-            var voiceSource = ReadNullableString(root, "voiceSource");
+            var expectedModel = Path.GetFileName(
+                    _options.ModelPath.TrimEnd('/', '\\'))
+                ?? _options.ModelPath;
+            var identity = CosyVoiceServiceHealthPolicy.ValidateIdentity(
+                snapshot,
+                expectedModel);
+
+            if (!identity.CanReuse)
+            {
+                return CosyVoiceRuntimeStatus.Incompatible(identity.Reason);
+            }
+
             var cudaAvailable = ReadNullableBoolean(root, "cudaAvailable");
 
             return new CosyVoiceRuntimeStatus(
-                ready,
-                model,
-                voiceSource,
-                cudaAvailable);
+                snapshot.Ready,
+                snapshot.Model,
+                snapshot.VoiceSource,
+                cudaAvailable,
+                IncompatibilityReason: null);
         }
         catch (Exception exception) when (
             exception is HttpRequestException or TaskCanceledException or JsonException)
@@ -169,6 +225,18 @@ public sealed class CosyVoiceClient
         return element.GetString();
     }
 
+    private static int? ReadNullableInt32(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var element) ||
+            element.ValueKind != JsonValueKind.Number ||
+            !element.TryGetInt32(out var value))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
     private static bool? ReadNullableBoolean(JsonElement root, string propertyName)
     {
         if (!root.TryGetProperty(propertyName, out var element))
@@ -188,9 +256,13 @@ public sealed class CosyVoiceClient
         bool Ready,
         string? Model,
         string? VoiceSource,
-        bool? CudaAvailable)
+        bool? CudaAvailable,
+        string? IncompatibilityReason)
     {
         public static CosyVoiceRuntimeStatus Unavailable { get; } =
-            new(false, null, null, null);
+            new(false, null, null, null, null);
+
+        public static CosyVoiceRuntimeStatus Incompatible(string reason) =>
+            new(false, null, null, null, reason);
     }
 }

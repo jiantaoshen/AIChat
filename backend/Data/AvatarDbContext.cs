@@ -41,6 +41,9 @@ public sealed class AvatarDbContext(DbContextOptions<AvatarDbContext> options)
             entity.Property(item => item.Content)
                 .IsRequired();
 
+            entity.Property(item => item.Language)
+                .HasMaxLength(16);
+
             entity.Property(item => item.Emotion)
                 .HasMaxLength(32);
 
@@ -52,6 +55,14 @@ public sealed class AvatarDbContext(DbContextOptions<AvatarDbContext> options)
                 item.ConversationId,
                 item.CreatedAtUtc,
             });
+
+            entity.HasIndex(item => new
+            {
+                item.TurnId,
+                item.Role,
+            })
+                .IsUnique()
+                .HasFilter("\"TurnId\" IS NOT NULL");
 
             entity
                 .HasOne(item => item.Conversation)

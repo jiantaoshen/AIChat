@@ -21,6 +21,8 @@ LOG = logging.getLogger("ai-avatar-cosyvoice")
 OFFICIAL_DEMO_PROMPT_TEXT = "希望你以后能够做的比我还好呦。"
 END_OF_PROMPT = "<|endofprompt|>"
 ASSISTANT_PROMPT = "You are a helpful assistant."
+SERVICE_ID = "ai-avatar-cosyvoice"
+HEALTH_CONTRACT_VERSION = 1
 
 
 class SynthesisRequest(BaseModel):
@@ -211,10 +213,19 @@ def create_app(runtime: CosyVoiceRuntime) -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, object]:
         return {
+            "service": SERVICE_ID,
+            "contractVersion": HEALTH_CONTRACT_VERSION,
             "ready": runtime.is_ready(),
             "model": runtime.model_dir.name,
+            "modelPath": str(runtime.model_dir.resolve()),
             "sampleRate": runtime.sample_rate,
             "voiceSource": runtime.voice_source,
+            "referenceWavPath": str(runtime.reference_wav.resolve()),
+            "referenceTextPath": (
+                str(runtime.reference_text.resolve())
+                if runtime.voice_source == "custom-reference"
+                else None
+            ),
             "cudaAvailable": torch.cuda.is_available(),
         }
 

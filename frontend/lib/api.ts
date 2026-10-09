@@ -10,6 +10,7 @@ const API_BASE_URL =
 
 export async function sendChatRequest(
   request: ChatRequest,
+  signal?: AbortSignal,
 ): Promise<AvatarChatResponse> {
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",
@@ -17,6 +18,7 @@ export async function sendChatRequest(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
+    signal,
   });
 
   if (!response.ok) {

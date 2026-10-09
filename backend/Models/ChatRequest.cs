@@ -1,6 +1,7 @@
-// This file defines the browser request body containing the active conversation identifier and recent message context sent to the local model.
+// This file defines one idempotent browser chat turn. Conversation history is owned by the backend, not supplied by the client.
 namespace AiAvatar.Backend.Models;
 
 public sealed record ChatRequest(
     Guid? ConversationId,
-    IReadOnlyList<ChatMessage> Messages);
+    Guid TurnId,
+    string Message);

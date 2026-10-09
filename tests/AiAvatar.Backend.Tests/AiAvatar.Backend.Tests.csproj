@@ -1,0 +1,22 @@
+<!-- This project exercises deterministic backend policy, parsing, and real SQLite transaction/idempotency behavior. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- xUnit v3 4.x uses Microsoft.Testing.Platform v2. The repo-level
+         global.json selects the .NET 10 native MTP dotnet test runner. -->
+    <PackageReference Include="xunit.v3.mtp-v2" Version="4.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\backend\AiAvatar.Backend.csproj" />
+  </ItemGroup>
+</Project>

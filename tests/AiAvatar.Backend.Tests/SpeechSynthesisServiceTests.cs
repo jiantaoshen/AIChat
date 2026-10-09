@@ -42,6 +42,7 @@ public sealed class SpeechSynthesisServiceTests
             new CosyVoiceOptions
             {
                 Enabled = true,
+                ModelPath = "test-model",
                 StartupTimeoutSeconds = 10,
                 SynthesisTimeoutSeconds = 15,
                 MaxTextCharacters = 800,
@@ -81,6 +82,7 @@ public sealed class SpeechSynthesisServiceTests
             new CosyVoiceOptions
             {
                 Enabled = true,
+                ModelPath = "test-model",
                 StartupTimeoutSeconds = 10,
                 SynthesisTimeoutSeconds = 15,
                 MaxTextCharacters = 800,
@@ -115,7 +117,7 @@ public sealed class SpeechSynthesisServiceTests
                 {
                     Content = new StringContent(
                         """
-                        {"ready":true,"model":"test-model","voiceSource":"test.wav","cudaAvailable":false}
+                        {"service":"ai-avatar-cosyvoice","contractVersion":1,"ready":true,"model":"test-model","voiceSource":"test.wav","cudaAvailable":false}
                         """,
                         Encoding.UTF8,
                         "application/json"),

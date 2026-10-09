@@ -119,6 +119,14 @@ public sealed class CosyVoiceClient
             cancellationToken.ThrowIfCancellationRequested();
 
             var status = await ReadRuntimeStatusAsync(cancellationToken);
+            if (status.IncompatibilityReason is not null)
+            {
+                throw new LocalDependencyUnavailableException(
+                    "CosyVoice3",
+                    "The local TTS port is occupied by an incompatible CosyVoice service. Stop the stale process and restart TTS.",
+                    status.IncompatibilityReason);
+            }
+
             if (status.Ready)
             {
                 return status;
@@ -158,18 +166,39 @@ public sealed class CosyVoiceClient
                 cancellationToken: timeout.Token);
 
             var root = document.RootElement;
-            var ready = root.TryGetProperty("ready", out var readyElement)
-                && readyElement.ValueKind == JsonValueKind.True;
+            var snapshot = new CosyVoiceHealthSnapshot
+            {
+                Service = ReadNullableString(root, "service"),
+                ContractVersion = ReadNullableInt32(root, "contractVersion"),
+                Ready = root.TryGetProperty("ready", out var readyElement)
+                    && readyElement.ValueKind == JsonValueKind.True,
+                Model = ReadNullableString(root, "model"),
+                ModelPath = ReadNullableString(root, "modelPath"),
+                VoiceSource = ReadNullableString(root, "voiceSource"),
+                ReferenceWavPath = ReadNullableString(root, "referenceWavPath"),
+                ReferenceTextPath = ReadNullableString(root, "referenceTextPath"),
+            };
 
-            var model = ReadNullableString(root, "model");
-            var voiceSource = ReadNullableString(root, "voiceSource");
+            var expectedModel = Path.GetFileName(
+                    _options.ModelPath.TrimEnd('/', '\\'))
+                ?? _options.ModelPath;
+            var identity = CosyVoiceServiceHealthPolicy.ValidateIdentity(
+                snapshot,
+                expectedModel);
+
+            if (!identity.CanReuse)
+            {
+                return CosyVoiceRuntimeStatus.Incompatible(identity.Reason);
+            }
+
             var cudaAvailable = ReadNullableBoolean(root, "cudaAvailable");
 
             return new CosyVoiceRuntimeStatus(
-                ready,
-                model,
-                voiceSource,
-                cudaAvailable);
+                snapshot.Ready,
+                snapshot.Model,
+                snapshot.VoiceSource,
+                cudaAvailable,
+                IncompatibilityReason: null);
         }
         catch (Exception exception) when (
             exception is HttpRequestException or TaskCanceledException or JsonException)
@@ -196,6 +225,18 @@ public sealed class CosyVoiceClient
         return element.GetString();
     }
 
+    private static int? ReadNullableInt32(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var element) ||
+            element.ValueKind != JsonValueKind.Number ||
+            !element.TryGetInt32(out var value))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
     private static bool? ReadNullableBoolean(JsonElement root, string propertyName)
     {
         if (!root.TryGetProperty(propertyName, out var element))
@@ -215,9 +256,13 @@ public sealed class CosyVoiceClient
         bool Ready,
         string? Model,
         string? VoiceSource,
-        bool? CudaAvailable)
+        bool? CudaAvailable,
+        string? IncompatibilityReason)
     {
         public static CosyVoiceRuntimeStatus Unavailable { get; } =
-            new(false, null, null, null);
+            new(false, null, null, null, null);
+
+        public static CosyVoiceRuntimeStatus Incompatible(string reason) =>
+            new(false, null, null, null, reason);
     }
 }

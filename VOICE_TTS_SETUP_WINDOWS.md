@@ -67,6 +67,8 @@ Normally the ASP.NET Core backend starts the Python service automatically. For T
 .\RUN_COSYVOICE_WINDOWS.cmd
 ```
 
+`RUN_COSYVOICE_WINDOWS.cmd` is intentionally only a thin wrapper. The actual launcher is `scripts/run-cosyvoice.ps1`, which reads the same canonical `CosyVoice` section from `backend/appsettings.json` that ASP.NET Core binds at runtime. Model path, reference voice, host, port, and demo-voice fallback are therefore not duplicated in the CMD file. Standard `CosyVoice__...` environment variables remain explicit overrides, matching ASP.NET Core configuration precedence.
+
 Health endpoint:
 
 ```text
@@ -79,11 +81,28 @@ PowerShell:
 Invoke-RestMethod http://127.0.0.1:8188/health | ConvertTo-Json
 ```
 
-Useful health fields include the ready state, model, sample rate, voice source, and CUDA availability.
+Useful health fields include:
+
+```text
+service
+contractVersion
+ready
+model
+modelPath
+voiceSource
+referenceWavPath
+referenceTextPath
+sampleRate
+cudaAvailable
+```
+
+The backend does not trust a TCP listener by itself. Before reusing an already-running process it calls `/health` and verifies the expected service identity/contract, `ready=true`, the configured model, and the resolved voice WAV/text references.
 
 ## Stale port 8188 process
 
-The backend can reuse an existing listener on `127.0.0.1:8188`. If an old Python process survives a development restart, the application can therefore talk to stale TTS code or stale CUDA/runtime state.
+An old Python process can survive a development restart. The backend now fails closed instead of treating "port 8188 is open" as proof that the correct CosyVoice service is running.
+
+Reuse is allowed only when the `/health` response matches the current canonical configuration. If the port is occupied by an unidentified HTTP/TCP service, an older health contract, a different model, or a different reference voice, backend startup reports the mismatch and tells you to stop the stale listener. It does not silently reuse it.
 
 Inspect the listener:
 

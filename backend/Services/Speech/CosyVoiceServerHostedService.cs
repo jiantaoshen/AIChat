@@ -1,7 +1,9 @@
-// This file starts and stops the local CosyVoice3 Python service from the project-local venv so the TTS model stays loaded between avatar replies.
+// This file starts and stops the local CosyVoice3 Python service and validates any existing listener before reuse.
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net.Http.Json;
 using System.Net.Sockets;
+using System.Text.Json;
 using AiAvatar.Backend.Options;
 using Microsoft.Extensions.Options;
 
@@ -33,12 +35,39 @@ public sealed class CosyVoiceServerHostedService : IHostedService, IDisposable
             return;
         }
 
+        var existingHealth = await TryReadHealthAsync(cancellationToken);
+        if (existingHealth is not null)
+        {
+            var validation = CosyVoiceServiceHealthPolicy.ValidateForReuse(
+                existingHealth,
+                BuildExpectedService());
+
+            if (!validation.CanReuse)
+            {
+                _logger.LogError(
+                    "Refusing to reuse the service on {BaseUrl}: {Reason}. Stop the stale listener before using TTS. Text chat remains available.",
+                    _options.BaseUrl,
+                    validation.Reason);
+                return;
+            }
+
+            _logger.LogInformation(
+                "Reusing verified CosyVoice service on {BaseUrl}. Service={ServiceId}, contract={ContractVersion}, model={Model}, voice={VoiceSource}.",
+                _options.BaseUrl,
+                existingHealth.Service,
+                existingHealth.ContractVersion,
+                existingHealth.Model,
+                existingHealth.VoiceSource);
+            return;
+        }
+
         if (await IsPortOpenAsync(_options.Host, _options.Port, cancellationToken))
         {
-            _logger.LogInformation(
-                "A CosyVoice service is already listening on {Host}:{Port}; the backend will reuse it.",
+            _logger.LogError(
+                "Refusing to reuse the listener on {Host}:{Port}: GET {BaseUrl}/health did not return the expected CosyVoice health contract. Stop the process occupying the port before using TTS. Text chat remains available.",
                 _options.Host,
-                _options.Port);
+                _options.Port,
+                _options.BaseUrl);
             return;
         }
 
@@ -177,6 +206,97 @@ public sealed class CosyVoiceServerHostedService : IHostedService, IDisposable
     public void Dispose()
     {
         _process?.Dispose();
+    }
+
+    private async Task<CosyVoiceHealthSnapshot?> TryReadHealthAsync(
+        CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(2));
+
+        try
+        {
+            using var client = new HttpClient
+            {
+                BaseAddress = new Uri(_options.BaseUrl),
+                Timeout = Timeout.InfiniteTimeSpan,
+            };
+
+            using var response = await client.GetAsync("/health", timeout.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<CosyVoiceHealthSnapshot>(
+                new JsonSerializerOptions(JsonSerializerDefaults.Web),
+                timeout.Token);
+        }
+        catch (Exception exception) when (
+            exception is HttpRequestException or TaskCanceledException or JsonException or UriFormatException)
+        {
+            return null;
+        }
+    }
+
+    private CosyVoiceServiceExpectation BuildExpectedService()
+    {
+        var repoPath = ResolvePath(_options.CosyVoiceRepo);
+        var modelPath = ResolvePath(_options.ModelPath);
+        var referenceAudio = ResolvePath(_options.ReferenceAudioPath);
+        var referenceText = ResolvePath(_options.ReferenceTextPath);
+
+        var model = Path.GetFileName(
+                modelPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            ?? throw new InvalidOperationException("CosyVoice:ModelPath does not identify a model directory.");
+
+        if (HasUsableCustomReference(referenceAudio, referenceText))
+        {
+            return new CosyVoiceServiceExpectation(
+                model,
+                modelPath,
+                "custom-reference",
+                referenceAudio,
+                referenceText);
+        }
+
+        if (_options.UseOfficialDemoVoiceWhenReferenceMissing)
+        {
+            return new CosyVoiceServiceExpectation(
+                model,
+                modelPath,
+                "official-demo-fallback",
+                Path.Combine(repoPath, "asset", "zero_shot_prompt.wav"),
+                ReferenceTextPath: null);
+        }
+
+        return new CosyVoiceServiceExpectation(
+            model,
+            modelPath,
+            "custom-reference",
+            referenceAudio,
+            referenceText);
+    }
+
+    private static bool HasUsableCustomReference(string audioPath, string textPath)
+    {
+        if (!File.Exists(audioPath) || !File.Exists(textPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            return !string.IsNullOrWhiteSpace(File.ReadAllText(textPath));
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private string ResolvePath(string configuredPath)

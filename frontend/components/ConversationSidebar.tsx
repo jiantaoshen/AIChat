@@ -6,7 +6,6 @@ import {
   LoaderCircleIcon,
   MessageSquareTextIcon,
   PlusIcon,
-  RotateCcwIcon,
   Trash2Icon,
   Volume2Icon,
   VolumeXIcon,
@@ -34,7 +33,6 @@ interface ConversationSidebarProps {
   onNewConversation: () => void;
   onToggleVoice: () => void;
   onOpenLog: () => void;
-  onReset: () => void;
 }
 
 export function ConversationSidebar({
@@ -46,7 +44,6 @@ export function ConversationSidebar({
   onNewConversation,
   onToggleVoice,
   onOpenLog,
-  onReset,
 }: ConversationSidebarProps) {
   const [conversations, setConversations] = useState<ConversationArchiveItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -242,10 +239,6 @@ export function ConversationSidebar({
             <Button type="button" size="lg" onClick={onOpenLog}>
               <MessageSquareTextIcon />
               Conversation log
-            </Button>
-            <Button type="button" size="lg" onClick={onReset}>
-              <RotateCcwIcon />
-              Reset conversation
             </Button>
           </div>
         </CardContent>

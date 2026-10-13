@@ -50,7 +50,6 @@ export function ChatPanel() {
           onNewConversation={chat.resetConversation}
           onToggleVoice={chat.toggleVoice}
           onOpenLog={() => chat.setIsLogOpen(true)}
-          onReset={chat.resetConversation}
         />
       </div>
 

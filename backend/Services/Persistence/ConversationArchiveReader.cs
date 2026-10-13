@@ -1,4 +1,4 @@
-// This reader exposes persisted SQLite conversations for the browser archive without leaking telemetry or other developer-only data.
+// This service exposes and deletes persisted SQLite conversations for the browser archive without leaking telemetry or other developer-only data.
 using AiAvatar.Backend.Data;
 using AiAvatar.Backend.Errors;
 using AiAvatar.Backend.Models;
@@ -23,6 +23,23 @@ public sealed class ConversationArchiveReader(AvatarDbContext db)
                 item.Messages.Count(message =>
                     message.Role == "user" || message.Role == "assistant")))
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task DeleteAsync(
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        var conversation = await db.Conversations
+            .SingleOrDefaultAsync(item => item.Id == conversationId, cancellationToken);
+
+        if (conversation is null)
+        {
+            throw new ResourceNotFoundException(
+                $"Conversation '{conversationId}' was not found in the local database.");
+        }
+
+        db.Conversations.Remove(conversation);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<ConversationSnapshot> GetAsync(

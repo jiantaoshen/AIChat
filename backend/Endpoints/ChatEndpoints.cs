@@ -2,6 +2,7 @@
 using AiAvatar.Backend.Models;
 using AiAvatar.Backend.Services;
 using AiAvatar.Backend.Services.Ollama;
+using AiAvatar.Backend.Services.Concurrency;
 using AiAvatar.Backend.Services.Persistence;
 
 namespace AiAvatar.Backend.Endpoints;
@@ -46,6 +47,21 @@ public static class ChatEndpoints
                 conversationId,
                 cancellationToken);
             return Results.Ok(conversation);
+        });
+
+        endpoints.MapDelete("/api/conversations/{conversationId:guid}", async (
+            Guid conversationId,
+            ConversationArchiveReader archiveReader,
+            ConversationTurnGate turnGate,
+            CancellationToken cancellationToken) =>
+        {
+            using var lease = await turnGate.AcquireAsync(
+                conversationId,
+                Guid.NewGuid(),
+                cancellationToken);
+
+            await archiveReader.DeleteAsync(conversationId, cancellationToken);
+            return Results.NoContent();
         });
 
         return endpoints;

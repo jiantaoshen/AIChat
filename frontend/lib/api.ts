@@ -48,6 +48,23 @@ export async function listConversations(
   return (await response.json()) as ConversationArchiveItem[];
 }
 
+export async function deleteConversation(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}`,
+    { method: "DELETE", signal },
+  );
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      extractProblemDetail(details) ?? `Backend returned HTTP ${response.status}.`,
+    );
+  }
+}
+
 export async function getConversation(
   conversationId: string,
   signal?: AbortSignal,

@@ -123,7 +123,7 @@ function Get-ProjectCosyVoiceConfig {
     $referenceAudioPath = [string]$section.ReferenceAudioPath
     $referenceTextPath = [string]$section.ReferenceTextPath
     $useFallback = $section.UseOfficialDemoVoiceWhenReferenceMissing
-    $host = [string]$section.Host
+    $bindHost = [string]$section.Host
     $port = [string]$section.Port
 
     $overrides = @{
@@ -147,7 +147,7 @@ function Get-ProjectCosyVoiceConfig {
     if (-not [string]::IsNullOrWhiteSpace($overrides.ReferenceAudioPath)) { $referenceAudioPath = $overrides.ReferenceAudioPath }
     if (-not [string]::IsNullOrWhiteSpace($overrides.ReferenceTextPath)) { $referenceTextPath = $overrides.ReferenceTextPath }
     if (-not [string]::IsNullOrWhiteSpace($overrides.UseOfficialDemoVoiceWhenReferenceMissing)) { $useFallback = $overrides.UseOfficialDemoVoiceWhenReferenceMissing }
-    if (-not [string]::IsNullOrWhiteSpace($overrides.Host)) { $host = $overrides.Host }
+    if (-not [string]::IsNullOrWhiteSpace($overrides.Host)) { $bindHost = $overrides.Host }
     if (-not [string]::IsNullOrWhiteSpace($overrides.Port)) { $port = $overrides.Port }
 
     $enabled = ConvertTo-ProjectBoolean -Name "CosyVoice:Enabled" -Value $enabled
@@ -158,7 +158,7 @@ function Get-ProjectCosyVoiceConfig {
     if (-not $portIsValid -or $parsedPort -lt 1 -or $parsedPort -gt 65535) {
         throw "CosyVoice:Port must be an integer from 1 to 65535. Configured value: '$port'"
     }
-    if ([string]::IsNullOrWhiteSpace($host)) {
+    if ([string]::IsNullOrWhiteSpace($bindHost)) {
         throw "CosyVoice:Host is missing from backend/appsettings.json."
     }
 
@@ -171,7 +171,7 @@ function Get-ProjectCosyVoiceConfig {
         ReferenceAudioPath = Resolve-BackendConfiguredPath -BackendRoot $document.BackendRoot -ConfiguredPath $referenceAudioPath -Name "CosyVoice:ReferenceAudioPath"
         ReferenceTextPath = Resolve-BackendConfiguredPath -BackendRoot $document.BackendRoot -ConfiguredPath $referenceTextPath -Name "CosyVoice:ReferenceTextPath"
         UseOfficialDemoVoiceWhenReferenceMissing = $useFallback
-        Host = $host.Trim()
+        Host = $bindHost.Trim()
         Port = $parsedPort
         AppSettingsPath = $document.AppSettingsPath
     }

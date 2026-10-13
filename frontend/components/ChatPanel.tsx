@@ -22,6 +22,8 @@ export function ChatPanel() {
             operationalState={chat.operationalState}
             animationKey={chat.animationKey}
             reply={chat.visibleReply}
+            canReplay={chat.canReplay}
+            onReplay={() => void chat.replayVoice()}
           />
 
           <ChatComposer
@@ -42,13 +44,11 @@ export function ChatPanel() {
           archiveRevision={chat.archiveRevision}
           isConversationLoading={chat.isConversationLoading}
           voiceEnabled={chat.voiceEnabled}
-          canReplay={chat.canReplay}
           onSelectConversation={(conversationId) =>
             void chat.loadConversation(conversationId)
           }
           onNewConversation={chat.resetConversation}
           onToggleVoice={chat.toggleVoice}
-          onReplay={() => void chat.replayVoice()}
           onOpenLog={() => chat.setIsLogOpen(true)}
           onReset={chat.resetConversation}
         />

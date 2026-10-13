@@ -3,6 +3,7 @@
 
 import Image from "next/image";
 import { useEffect } from "react";
+import { Volume2Icon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +17,8 @@ interface AvatarStageProps {
   operationalState: OperationalState;
   animationKey: number;
   reply: string;
+  canReplay: boolean;
+  onReplay: () => void;
 }
 
 const spriteByEmotion: Record<Emotion, string> = {
@@ -45,6 +48,8 @@ export function AvatarStage({
   operationalState,
   animationKey,
   reply,
+  canReplay,
+  onReplay,
 }: AvatarStageProps) {
   useEffect(() => {
     for (const source of allSprites) {
@@ -135,7 +140,18 @@ export function AvatarStage({
       </Badge>
 
       <Card className="avatar-dialog-card absolute right-4 bottom-4 left-4 z-30 mx-auto max-w-5xl gap-0 overflow-hidden rounded-3xl py-0 backdrop-blur-md">
-        <CardContent className="px-5 py-4">
+        <CardContent className="relative px-5 py-4 pr-14">
+          <button
+            type="button"
+            title="Replay voice"
+            aria-label="Replay voice"
+            disabled={!canReplay}
+            onClick={onReplay}
+            className="absolute right-4 top-4 z-10 inline-flex size-8 items-center justify-center rounded-full text-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-transparent dark:text-white dark:hover:bg-white/10 dark:disabled:text-gray-600"
+          >
+            <Volume2Icon className="size-4" />
+          </button>
+
           <div className="mb-2 flex items-center gap-3">
             <Badge className="rounded-full px-3 py-1 text-xs font-bold tracking-wider">
               AVATAR

@@ -30,11 +30,9 @@ interface ConversationSidebarProps {
   archiveRevision: number;
   isConversationLoading: boolean;
   voiceEnabled: boolean;
-  canReplay: boolean;
   onSelectConversation: (conversationId: string) => void;
   onNewConversation: () => void;
   onToggleVoice: () => void;
-  onReplay: () => void;
   onOpenLog: () => void;
   onReset: () => void;
 }
@@ -44,11 +42,9 @@ export function ConversationSidebar({
   archiveRevision,
   isConversationLoading,
   voiceEnabled,
-  canReplay,
   onSelectConversation,
   onNewConversation,
   onToggleVoice,
-  onReplay,
   onOpenLog,
   onReset,
 }: ConversationSidebarProps) {
@@ -243,10 +239,6 @@ export function ConversationSidebar({
           </ScrollArea>
 
           <div className="grid shrink-0 gap-3 border-t pt-4">
-            <Button type="button" size="lg" onClick={onReplay} disabled={!canReplay}>
-              <Volume2Icon />
-              Replay voice
-            </Button>
             <Button type="button" size="lg" onClick={onOpenLog}>
               <MessageSquareTextIcon />
               Conversation log

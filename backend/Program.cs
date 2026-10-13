@@ -78,6 +78,7 @@ builder.Services.AddDbContext<AvatarDbContext>(options =>
     options.UseSqlite(sqliteConnection.ConnectionString));
 builder.Services.AddScoped<IChatTurnRepository, ChatTurnRepository>();
 builder.Services.AddScoped<IConversationHistoryReader, ConversationHistoryReader>();
+builder.Services.AddScoped<ConversationArchiveReader>();
 builder.Services.AddSingleton<ConversationContextPolicy>();
 builder.Services.AddScoped<ISpeechRepository, SpeechRepository>();
 builder.Services.AddScoped<ChatTurnService>();

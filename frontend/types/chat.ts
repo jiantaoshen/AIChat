@@ -59,6 +59,22 @@ export interface ChatRequest {
   message: string;
 }
 
+export interface ConversationArchiveItem {
+  id: string;
+  title: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  messageCount: number;
+}
+
+export interface ConversationSnapshot {
+  id: string;
+  title: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  messages: ChatMessage[];
+}
+
 export interface SpeechSynthesisRequest {
   messageId: string;
 }

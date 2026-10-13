@@ -2,6 +2,8 @@
 import type {
   AvatarChatResponse,
   ChatRequest,
+  ConversationArchiveItem,
+  ConversationSnapshot,
   SpeechSynthesisRequest,
 } from "@/types/chat";
 
@@ -29,6 +31,40 @@ export async function sendChatRequest(
   }
 
   return (await response.json()) as AvatarChatResponse;
+}
+
+export async function listConversations(
+  signal?: AbortSignal,
+): Promise<ConversationArchiveItem[]> {
+  const response = await fetch(`${API_BASE_URL}/api/conversations`, { signal });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      extractProblemDetail(details) ?? `Backend returned HTTP ${response.status}.`,
+    );
+  }
+
+  return (await response.json()) as ConversationArchiveItem[];
+}
+
+export async function getConversation(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<ConversationSnapshot> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/conversations/${encodeURIComponent(conversationId)}`,
+    { signal },
+  );
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      extractProblemDetail(details) ?? `Backend returned HTTP ${response.status}.`,
+    );
+  }
+
+  return (await response.json()) as ConversationSnapshot;
 }
 
 export async function synthesizeSpeech(

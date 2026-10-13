@@ -1,7 +1,7 @@
 // This hook orchestrates one browser chat session while transport, reducer state, speech, and timers own their separate lifecycles.
 "use client";
 
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useReducer, useRef, useState } from "react";
 import {
   chatSessionReducer,
   createInitialChatSessionState,
@@ -9,6 +9,7 @@ import {
 import type { TurnIdentity } from "@/hooks/chatSpeechLifecyclePolicy";
 import { useChatSpeechLifecycle } from "@/hooks/useChatSpeechLifecycle";
 import { useChatTurnTransport } from "@/hooks/useChatTurnTransport";
+import { getConversation } from "@/lib/api";
 import { isOperationalStateBusy } from "@/lib/operationalState";
 import type { AvatarDecision, ChatMessage, OperationalState } from "@/types/chat";
 
@@ -18,8 +19,11 @@ export function useChatSession() {
     undefined,
     createInitialChatSessionState,
   );
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const voiceEnabledRef = useRef(true);
   const sessionIdRef = useRef(0);
   const turnGenerationRef = useRef(0);
+  const conversationLoadAbortRef = useRef<AbortController | null>(null);
   const { executeTurn, resetTurnTransport } = useChatTurnTransport();
 
   const isCurrentTurn = useCallback((identity: TurnIdentity) => {
@@ -57,8 +61,11 @@ export function useChatSession() {
   // composer/replay busy semantics while its hold timer is counting down.
   const isBusy = isOperationalStateBusy(operationalState);
   // Text generation is single-flight; TTS remains interruptible by the next send.
-  const canSend = state.input.trim().length > 0 && state.chatState !== "thinking";
-  const canReplay = hasReplay && !isBusy;
+  const canSend =
+    state.input.trim().length > 0 &&
+    state.chatState !== "thinking" &&
+    !state.isConversationLoading;
+  const canReplay = voiceEnabled && hasReplay && !isBusy;
 
   const latestAssistantMessage = [...state.messages]
     .reverse()
@@ -68,11 +75,11 @@ export function useChatSession() {
       ? "……"
       : state.decision.speech ||
         latestAssistantMessage?.content ||
-        (state.error ? "本地服务似乎没有正常回应。请检查右侧状态。" : "");
+        (state.error ? "本地服务似乎没有正常回应，请稍后再试。" : "");
 
   async function sendMessage() {
     const text = state.input.trim();
-    if (!text || state.chatState === "thinking") {
+    if (!text || state.chatState === "thinking" || state.isConversationLoading) {
       return;
     }
 
@@ -107,12 +114,16 @@ export function useChatSession() {
       }
 
       dispatch({ type: "sendSucceeded", response: completed.response });
-      await speakDecision(
-        completed.response.assistantMessageId,
-        completed.response.decision,
-        completed.response.speechCapability,
-        identity,
-      );
+      if (voiceEnabledRef.current) {
+        await speakDecision(
+          completed.response.assistantMessageId,
+          completed.response.decision,
+          completed.response.speechCapability,
+          identity,
+        );
+      } else {
+        scheduleWithoutSpeechReset(completed.response.decision, identity);
+      }
     } catch (caught) {
       if (identity === null || !isCurrentTurn(identity)) {
         return;
@@ -151,12 +162,72 @@ export function useChatSession() {
     await replayDecision(state.decision, identity);
   }
 
+  async function loadConversation(conversationId: string) {
+    if (conversationId === state.conversationId && !state.isConversationLoading) {
+      return;
+    }
+
+    // Switching archives is a session boundary: cancel any in-flight generation,
+    // speech, stale archive request, and timers before accepting persisted state.
+    sessionIdRef.current += 1;
+    turnGenerationRef.current += 1;
+    resetTurnTransport();
+    clearSpeech();
+    clearNeutralResetTimer();
+    conversationLoadAbortRef.current?.abort();
+
+    const sessionId = sessionIdRef.current;
+    const controller = new AbortController();
+    conversationLoadAbortRef.current = controller;
+    dispatch({ type: "conversationLoadStarted" });
+
+    try {
+      const conversation = await getConversation(conversationId, controller.signal);
+      if (controller.signal.aborted || sessionIdRef.current !== sessionId) {
+        return;
+      }
+
+      dispatch({
+        type: "conversationLoaded",
+        conversationId: conversation.id,
+        messages: conversation.messages,
+      });
+    } catch (caught) {
+      if (controller.signal.aborted || sessionIdRef.current !== sessionId) {
+        return;
+      }
+
+      dispatch({
+        type: "conversationLoadFailed",
+        message:
+          caught instanceof Error ? caught.message : "无法载入本地对话存档。",
+      });
+    } finally {
+      if (conversationLoadAbortRef.current === controller) {
+        conversationLoadAbortRef.current = null;
+      }
+    }
+  }
+
+  function toggleVoice() {
+    const next = !voiceEnabledRef.current;
+    voiceEnabledRef.current = next;
+    setVoiceEnabled(next);
+
+    if (!next) {
+      stopSpeech();
+      dispatch({ type: "ttsErrorChanged", message: null });
+    }
+  }
+
   function resetConversation() {
     // Identity changes first: cancellation is best-effort, identity is the final
     // correctness barrier against already-resolved stale Promise callbacks.
     sessionIdRef.current += 1;
     turnGenerationRef.current += 1;
     resetTurnTransport();
+    conversationLoadAbortRef.current?.abort();
+    conversationLoadAbortRef.current = null;
     clearSpeech();
     clearNeutralResetTimer();
     dispatch({ type: "reset" });
@@ -164,6 +235,7 @@ export function useChatSession() {
 
   return {
     messages: state.messages,
+    conversationId: state.conversationId,
     input: state.input,
     setInput: (value: string) => dispatch({ type: "inputChanged", value }),
     decision: state.decision,
@@ -176,10 +248,15 @@ export function useChatSession() {
     visibleReply,
     canSend,
     canReplay,
+    voiceEnabled,
+    isConversationLoading: state.isConversationLoading,
+    archiveRevision: state.archiveRevision,
     isLogOpen: state.isLogOpen,
     setIsLogOpen: (open: boolean) => dispatch({ type: "logOpenChanged", open }),
     sendMessage,
     replayVoice,
+    loadConversation,
+    toggleVoice,
     resetConversation,
   };
 }

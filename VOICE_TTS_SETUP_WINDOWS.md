@@ -94,7 +94,17 @@ referenceWavPath
 referenceTextPath
 sampleRate
 cudaAvailable
+fp16
+modelDtypes
+lowVramMode
+referenceCacheReady
+speechTokenizerProviders
+gpuMemory
 ```
+
+For the default 4 GB VRAM profile, `CosyVoice:LowVramMode` is enabled. The local wrapper keeps the speech-tokenizer ONNX session on CPU, stages checkpoints in system RAM, moves the CosyVoice LLM/Flow/HiFT modules to CUDA in FP16, disables vLLM/TensorRT, and wraps synthesis in PyTorch inference mode. `/health` exposes the active precision/provider state and CUDA memory telemetry so you can verify that the optimization is actually active. Set `CosyVoice__LowVramMode=false` only when intentionally testing the upstream/default loading behavior.
+
+The matching Ollama profile sets `Ollama:NumGpu` to `0`. That sends `num_gpu: 0` with Qwen requests so the 4 GB GPU stays available to CosyVoice while Qwen3 Q4 remains in system RAM/CPU. On a machine with more VRAM you can raise `Ollama:NumGpu` (or use `-1` for Ollama automatic GPU selection), but doing so on a 4 GB card can make TTS fail from VRAM contention.
 
 The backend does not trust a TCP listener by itself. Before reusing an already-running process it calls `/health` and verifies the expected service identity/contract, `ready=true`, the configured model, and the resolved voice WAV/text references.
 
@@ -102,7 +112,7 @@ The backend does not trust a TCP listener by itself. Before reusing an already-r
 
 An old Python process can survive a development restart. The backend now fails closed instead of treating "port 8188 is open" as proof that the correct CosyVoice service is running.
 
-Reuse is allowed only when the `/health` response matches the current canonical configuration. If the port is occupied by an unidentified HTTP/TCP service, an older health contract, a different model, or a different reference voice, backend startup reports the mismatch and tells you to stop the stale listener. It does not silently reuse it.
+Reuse is allowed only when the `/health` response matches the current canonical configuration. If the port is occupied by an unidentified HTTP/TCP service, an older health contract, a different model, a different reference voice, or a different low-VRAM mode, backend startup reports the mismatch and tells you to stop the stale listener. It does not silently reuse it.
 
 Inspect the listener:
 

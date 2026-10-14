@@ -29,6 +29,9 @@ builder.Services
         options => options.ContextLength > 0,
         "Ollama:ContextLength must be greater than zero.")
     .Validate(
+        options => options.NumGpu >= -1,
+        "Ollama:NumGpu must be -1 or greater. Use 0 to reserve the GPU for CosyVoice on low-VRAM systems; -1 restores Ollama automatic GPU selection.")
+    .Validate(
         options => options.MaxOutputTokens > 0 && options.MaxOutputTokens < options.ContextLength,
         "Ollama:MaxOutputTokens must be greater than zero and smaller than ContextLength.")
     .Validate(

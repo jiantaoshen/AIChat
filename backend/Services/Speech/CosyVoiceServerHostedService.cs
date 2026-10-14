@@ -135,6 +135,11 @@ public sealed class CosyVoiceServerHostedService : IHostedService, IDisposable
             startInfo.ArgumentList.Add("--use-official-demo-voice");
         }
 
+        if (_options.LowVramMode)
+        {
+            startInfo.ArgumentList.Add("--low-vram");
+        }
+
         _process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         _process.OutputDataReceived += (_, eventArgs) =>
         {
@@ -257,7 +262,8 @@ public sealed class CosyVoiceServerHostedService : IHostedService, IDisposable
                 modelPath,
                 "custom-reference",
                 referenceAudio,
-                referenceText);
+                referenceText,
+                _options.LowVramMode);
         }
 
         if (_options.UseOfficialDemoVoiceWhenReferenceMissing)
@@ -267,7 +273,8 @@ public sealed class CosyVoiceServerHostedService : IHostedService, IDisposable
                 modelPath,
                 "official-demo-fallback",
                 Path.Combine(repoPath, "asset", "zero_shot_prompt.wav"),
-                ReferenceTextPath: null);
+                ReferenceTextPath: null,
+                LowVramMode: _options.LowVramMode);
         }
 
         return new CosyVoiceServiceExpectation(
@@ -275,7 +282,8 @@ public sealed class CosyVoiceServerHostedService : IHostedService, IDisposable
             modelPath,
             "custom-reference",
             referenceAudio,
-            referenceText);
+            referenceText,
+            _options.LowVramMode);
     }
 
     private static bool HasUsableCustomReference(string audioPath, string textPath)

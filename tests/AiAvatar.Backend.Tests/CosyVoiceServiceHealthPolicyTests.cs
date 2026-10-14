@@ -14,7 +14,8 @@ public sealed class CosyVoiceServiceHealthPolicyTests
             modelPath,
             "custom-reference",
             referencePath,
-            Path.GetFullPath(Path.Combine("voice", "reference.txt")));
+            Path.GetFullPath(Path.Combine("voice", "reference.txt")),
+            LowVramMode: true);
         var status = new CosyVoiceHealthSnapshot
         {
             Service = CosyVoiceServiceHealthPolicy.ServiceId,
@@ -25,6 +26,8 @@ public sealed class CosyVoiceServiceHealthPolicyTests
             VoiceSource = expected.VoiceSource,
             ReferenceWavPath = referencePath,
             ReferenceTextPath = expected.ReferenceTextPath,
+            LowVramMode = expected.LowVramMode,
+            Fp16 = true,
         };
 
         var result = CosyVoiceServiceHealthPolicy.ValidateForReuse(status, expected);
@@ -47,6 +50,8 @@ public sealed class CosyVoiceServiceHealthPolicyTests
             VoiceSource = status.VoiceSource,
             ReferenceWavPath = status.ReferenceWavPath,
             ReferenceTextPath = status.ReferenceTextPath,
+            LowVramMode = status.LowVramMode,
+            Fp16 = status.Fp16,
         };
 
         var result = CosyVoiceServiceHealthPolicy.ValidateForReuse(status, expected);
@@ -70,6 +75,8 @@ public sealed class CosyVoiceServiceHealthPolicyTests
             VoiceSource = status.VoiceSource,
             ReferenceWavPath = status.ReferenceWavPath,
             ReferenceTextPath = status.ReferenceTextPath,
+            LowVramMode = status.LowVramMode,
+            Fp16 = status.Fp16,
         };
 
         var result = CosyVoiceServiceHealthPolicy.ValidateForReuse(status, expected);
@@ -93,6 +100,8 @@ public sealed class CosyVoiceServiceHealthPolicyTests
             VoiceSource = status.VoiceSource,
             ReferenceWavPath = Path.GetFullPath(Path.Combine("voice", "old-reference.wav")),
             ReferenceTextPath = status.ReferenceTextPath,
+            LowVramMode = status.LowVramMode,
+            Fp16 = status.Fp16,
         };
 
         var result = CosyVoiceServiceHealthPolicy.ValidateForReuse(status, expected);
@@ -116,6 +125,8 @@ public sealed class CosyVoiceServiceHealthPolicyTests
             VoiceSource = matching.VoiceSource,
             ReferenceWavPath = matching.ReferenceWavPath,
             ReferenceTextPath = matching.ReferenceTextPath,
+            LowVramMode = matching.LowVramMode,
+            Fp16 = matching.Fp16,
         };
 
         var result = CosyVoiceServiceHealthPolicy.ValidateForReuse(status, expected);
@@ -124,13 +135,39 @@ public sealed class CosyVoiceServiceHealthPolicyTests
         Assert.Contains("ready=false", result.Reason);
     }
 
+    [Fact]
+    public void ValidateForReuse_RejectsDifferentLowVramMode()
+    {
+        var expected = CreateExpectation();
+        var matching = CreateMatchingStatus(expected);
+        var status = new CosyVoiceHealthSnapshot
+        {
+            Service = matching.Service,
+            ContractVersion = matching.ContractVersion,
+            Ready = matching.Ready,
+            Model = matching.Model,
+            ModelPath = matching.ModelPath,
+            VoiceSource = matching.VoiceSource,
+            ReferenceWavPath = matching.ReferenceWavPath,
+            ReferenceTextPath = matching.ReferenceTextPath,
+            LowVramMode = false,
+            Fp16 = false,
+        };
+
+        var result = CosyVoiceServiceHealthPolicy.ValidateForReuse(status, expected);
+
+        Assert.False(result.CanReuse);
+        Assert.Contains("low-VRAM mode mismatch", result.Reason);
+    }
+
     private static CosyVoiceServiceExpectation CreateExpectation() =>
         new(
             "Fun-CosyVoice3-0.5B-2512",
             Path.GetFullPath(Path.Combine("models", "Fun-CosyVoice3-0.5B-2512")),
             "custom-reference",
             Path.GetFullPath(Path.Combine("voice", "reference.wav")),
-            Path.GetFullPath(Path.Combine("voice", "reference.txt")));
+            Path.GetFullPath(Path.Combine("voice", "reference.txt")),
+            LowVramMode: true);
 
     private static CosyVoiceHealthSnapshot CreateMatchingStatus(
         CosyVoiceServiceExpectation expected) =>
@@ -144,5 +181,7 @@ public sealed class CosyVoiceServiceHealthPolicyTests
             VoiceSource = expected.VoiceSource,
             ReferenceWavPath = expected.ReferenceWavPath,
             ReferenceTextPath = expected.ReferenceTextPath,
+            LowVramMode = expected.LowVramMode,
+            Fp16 = true,
         };
 }

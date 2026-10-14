@@ -123,7 +123,9 @@ function Get-ProjectCosyVoiceConfig {
     $referenceAudioPath = [string]$section.ReferenceAudioPath
     $referenceTextPath = [string]$section.ReferenceTextPath
     $useFallback = $section.UseOfficialDemoVoiceWhenReferenceMissing
-    $host = [string]$section.Host
+    $lowVramMode = $section.LowVramMode
+    if ($null -eq $lowVramMode) { $lowVramMode = $true }
+    $bindHost = [string]$section.Host
     $port = [string]$section.Port
 
     $overrides = @{
@@ -135,6 +137,7 @@ function Get-ProjectCosyVoiceConfig {
         ReferenceAudioPath = $env:CosyVoice__ReferenceAudioPath
         ReferenceTextPath = $env:CosyVoice__ReferenceTextPath
         UseOfficialDemoVoiceWhenReferenceMissing = $env:CosyVoice__UseOfficialDemoVoiceWhenReferenceMissing
+        LowVramMode = $env:CosyVoice__LowVramMode
         Host = $env:CosyVoice__Host
         Port = $env:CosyVoice__Port
     }
@@ -147,18 +150,20 @@ function Get-ProjectCosyVoiceConfig {
     if (-not [string]::IsNullOrWhiteSpace($overrides.ReferenceAudioPath)) { $referenceAudioPath = $overrides.ReferenceAudioPath }
     if (-not [string]::IsNullOrWhiteSpace($overrides.ReferenceTextPath)) { $referenceTextPath = $overrides.ReferenceTextPath }
     if (-not [string]::IsNullOrWhiteSpace($overrides.UseOfficialDemoVoiceWhenReferenceMissing)) { $useFallback = $overrides.UseOfficialDemoVoiceWhenReferenceMissing }
-    if (-not [string]::IsNullOrWhiteSpace($overrides.Host)) { $host = $overrides.Host }
+    if (-not [string]::IsNullOrWhiteSpace($overrides.LowVramMode)) { $lowVramMode = $overrides.LowVramMode }
+    if (-not [string]::IsNullOrWhiteSpace($overrides.Host)) { $bindHost = $overrides.Host }
     if (-not [string]::IsNullOrWhiteSpace($overrides.Port)) { $port = $overrides.Port }
 
     $enabled = ConvertTo-ProjectBoolean -Name "CosyVoice:Enabled" -Value $enabled
     $useFallback = ConvertTo-ProjectBoolean -Name "CosyVoice:UseOfficialDemoVoiceWhenReferenceMissing" -Value $useFallback
+    $lowVramMode = ConvertTo-ProjectBoolean -Name "CosyVoice:LowVramMode" -Value $lowVramMode
 
     $parsedPort = 0
     $portIsValid = [int]::TryParse($port, [ref]$parsedPort)
     if (-not $portIsValid -or $parsedPort -lt 1 -or $parsedPort -gt 65535) {
         throw "CosyVoice:Port must be an integer from 1 to 65535. Configured value: '$port'"
     }
-    if ([string]::IsNullOrWhiteSpace($host)) {
+    if ([string]::IsNullOrWhiteSpace($bindHost)) {
         throw "CosyVoice:Host is missing from backend/appsettings.json."
     }
 
@@ -171,7 +176,8 @@ function Get-ProjectCosyVoiceConfig {
         ReferenceAudioPath = Resolve-BackendConfiguredPath -BackendRoot $document.BackendRoot -ConfiguredPath $referenceAudioPath -Name "CosyVoice:ReferenceAudioPath"
         ReferenceTextPath = Resolve-BackendConfiguredPath -BackendRoot $document.BackendRoot -ConfiguredPath $referenceTextPath -Name "CosyVoice:ReferenceTextPath"
         UseOfficialDemoVoiceWhenReferenceMissing = $useFallback
-        Host = $host.Trim()
+        LowVramMode = $lowVramMode
+        Host = $bindHost.Trim()
         Port = $parsedPort
         AppSettingsPath = $document.AppSettingsPath
     }

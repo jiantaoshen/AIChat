@@ -20,7 +20,7 @@ export const INITIAL_DECISION: AvatarDecision = {
 const INITIAL_MESSAGES: ChatMessage[] = [
   {
     role: "assistant",
-    content: "你好。想聊点什么？你也可以直接用 English 或 svenska。",
+    content: "Hello. What would you like to talk about?",
   },
 ];
 
@@ -34,6 +34,8 @@ export interface ChatSessionState {
   animationKey: number;
   error: string | null;
   ttsError: string | null;
+  isConversationLoading: boolean;
+  archiveRevision: number;
   isLogOpen: boolean;
 }
 
@@ -49,6 +51,13 @@ export type ChatSessionAction =
     }
   | { type: "ttsErrorChanged"; message: string | null }
   | { type: "neutralReset" }
+  | { type: "conversationLoadStarted" }
+  | {
+      type: "conversationLoaded";
+      conversationId: string;
+      messages: ChatMessage[];
+    }
+  | { type: "conversationLoadFailed"; message: string }
   | { type: "logOpenChanged"; open: boolean }
   | { type: "reset" };
 
@@ -63,6 +72,8 @@ export function createInitialChatSessionState(): ChatSessionState {
     animationKey: 0,
     error: null,
     ttsError: null,
+    isConversationLoading: false,
+    archiveRevision: 0,
     isLogOpen: false,
   };
 }
@@ -97,6 +108,7 @@ export function chatSessionReducer(
         decision: action.response.decision,
         telemetry: action.response.telemetry,
         chatState: "idle",
+        archiveRevision: state.archiveRevision + 1,
         animationKey: state.animationKey + 1,
       };
 
@@ -130,12 +142,47 @@ export function chatSessionReducer(
         animationKey: state.animationKey + 1,
       };
 
+    case "conversationLoadStarted":
+      return {
+        ...state,
+        input: "",
+        error: null,
+        ttsError: null,
+        chatState: "idle",
+        isConversationLoading: true,
+        isLogOpen: false,
+      };
+
+    case "conversationLoaded":
+      return {
+        ...state,
+        conversationId: action.conversationId,
+        messages:
+          action.messages.length > 0 ? [...action.messages] : [...INITIAL_MESSAGES],
+        input: "",
+        decision: { ...INITIAL_DECISION },
+        telemetry: null,
+        chatState: "idle",
+        error: null,
+        ttsError: null,
+        isConversationLoading: false,
+        animationKey: state.animationKey + 1,
+      };
+
+    case "conversationLoadFailed":
+      return {
+        ...state,
+        error: action.message,
+        isConversationLoading: false,
+      };
+
     case "logOpenChanged":
       return { ...state, isLogOpen: action.open };
 
     case "reset":
       return {
         ...createInitialChatSessionState(),
+        archiveRevision: state.archiveRevision,
         animationKey: state.animationKey + 1,
       };
   }

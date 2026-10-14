@@ -1,10 +1,10 @@
-// This component composes the avatar stage, chat composer, telemetry sidebar, and conversation log for one local chat session.
+// This component composes the avatar stage, chat composer, and SQLite-backed conversation archive for one local chat session.
 "use client";
 
 import { AvatarStage } from "@/components/AvatarStage";
 import { ChatComposer } from "@/components/ChatComposer";
 import { ChatLogModal } from "@/components/ChatLogModal";
-import { TelemetrySidebar } from "@/components/TelemetrySidebar";
+import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { useChatSession } from "@/hooks/useChatSession";
 
 export function ChatPanel() {
@@ -22,6 +22,8 @@ export function ChatPanel() {
             operationalState={chat.operationalState}
             animationKey={chat.animationKey}
             reply={chat.visibleReply}
+            canReplay={chat.canReplay}
+            onReplay={() => void chat.replayVoice()}
           />
 
           <ChatComposer
@@ -37,17 +39,17 @@ export function ChatPanel() {
           />
         </section>
 
-        <TelemetrySidebar
-          decision={chat.decision}
-          telemetry={chat.telemetry}
-          operationalState={chat.operationalState}
-          ttsState={chat.speechState}
-          error={chat.error}
-          ttsError={chat.ttsError}
-          canReplay={chat.canReplay}
-          onReplay={() => void chat.replayVoice()}
+        <ConversationSidebar
+          activeConversationId={chat.conversationId}
+          archiveRevision={chat.archiveRevision}
+          isConversationLoading={chat.isConversationLoading}
+          voiceEnabled={chat.voiceEnabled}
+          onSelectConversation={(conversationId) =>
+            void chat.loadConversation(conversationId)
+          }
+          onNewConversation={chat.resetConversation}
+          onToggleVoice={chat.toggleVoice}
           onOpenLog={() => chat.setIsLogOpen(true)}
-          onReset={chat.resetConversation}
         />
       </div>
 

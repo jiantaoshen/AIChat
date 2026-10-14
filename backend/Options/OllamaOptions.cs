@@ -8,6 +8,7 @@ public sealed class OllamaOptions
     public string BaseUrl { get; init; } = "http://localhost:11434";
     public string Model { get; init; } = string.Empty;
     public int ContextLength { get; init; } = 4096;
+    public int NumGpu { get; init; } = 0;
     public double Temperature { get; init; } = 0.55;
     public int MaxOutputTokens { get; init; } = 280;
     public int ContextSafetyReserveTokens { get; init; }

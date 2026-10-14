@@ -11,6 +11,8 @@ public sealed class CosyVoiceHealthSnapshot
     public string? VoiceSource { get; init; }
     public string? ReferenceWavPath { get; init; }
     public string? ReferenceTextPath { get; init; }
+    public bool? LowVramMode { get; init; }
+    public bool? Fp16 { get; init; }
 }
 
 public sealed record CosyVoiceServiceExpectation(
@@ -18,14 +20,15 @@ public sealed record CosyVoiceServiceExpectation(
     string ModelPath,
     string VoiceSource,
     string ReferenceWavPath,
-    string? ReferenceTextPath);
+    string? ReferenceTextPath,
+    bool LowVramMode);
 
 public sealed record CosyVoiceHealthValidation(bool CanReuse, string Reason);
 
 public static class CosyVoiceServiceHealthPolicy
 {
     public const string ServiceId = "ai-avatar-cosyvoice";
-    public const int ContractVersion = 1;
+    public const int ContractVersion = 3;
 
     public static CosyVoiceHealthValidation ValidateIdentity(
         CosyVoiceHealthSnapshot status,
@@ -84,6 +87,12 @@ public static class CosyVoiceServiceHealthPolicy
         {
             return Reject(
                 $"reference text mismatch (expected '{expected.ReferenceTextPath ?? "<none>"}', got '{status.ReferenceTextPath ?? "<missing>"}')");
+        }
+
+        if (status.LowVramMode != expected.LowVramMode)
+        {
+            return Reject(
+                $"low-VRAM mode mismatch (expected {expected.LowVramMode}, got {status.LowVramMode?.ToString() ?? "<missing>"})");
         }
 
         return new CosyVoiceHealthValidation(true, "service configuration is compatible");

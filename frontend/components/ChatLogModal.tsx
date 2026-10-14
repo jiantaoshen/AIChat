@@ -87,7 +87,7 @@ export function ChatLogModal({
                 >
                   Avatar
                 </Badge>
-                <p className="animate-pulse text-sm text-muted-foreground">…</p>
+                <p className="animate-pulse text-sm text-muted-foreground">...</p>
               </article>
             )}
 

@@ -29,5 +29,6 @@ public sealed class OllamaRequestFactoryTests
         Assert.Equal(messages.Length + 1, serializedMessages.GetArrayLength());
         Assert.Equal("message 1", serializedMessages[1].GetProperty("content").GetString());
         Assert.Equal("message 13", serializedMessages[serializedMessages.GetArrayLength() - 1].GetProperty("content").GetString());
+        Assert.Equal(0, payload.RootElement.GetProperty("options").GetProperty("num_gpu").GetInt32());
     }
 }

@@ -14,6 +14,7 @@ public sealed class CosyVoiceOptions
     public string ReferenceAudioPath { get; set; } = "../tools/cosyvoice/voice/reference.wav";
     public string ReferenceTextPath { get; set; } = "../tools/cosyvoice/voice/reference.txt";
     public bool UseOfficialDemoVoiceWhenReferenceMissing { get; set; } = true;
+    public bool LowVramMode { get; set; } = true;
     public string Host { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 8188;
     public int StartupTimeoutSeconds { get; set; } = 240;

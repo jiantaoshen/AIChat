@@ -1,104 +1,27 @@
-# AI Avatar — Local Qwen Visual Novel Agent (Updated 2026 Oct)
+# Local AI Avatar with voice
 
-## Overview
-
-AI Avatar is a local-first embodied AI project built around a visual-novel-style interface.
-
-A local Qwen model generates dialogue and semantic avatar decisions, ASP.NET Core owns application control and persistence, SQLite is the authoritative conversation store, and CosyVoice3 provides local text-to-speech for supported languages.
-
-The project is intentionally server-authoritative: the browser sends the current user intent, not an authoritative copy of conversation history. The backend reconstructs model context from persisted SQLite messages, executes each chat turn with a stable `turnId`, and commits completed turns atomically.
-
-The browser also treats Reset and newer turns as lifecycle boundaries. Stale chat, TTS, replay, audio, and timer completions are invalidated instead of being allowed to overwrite the current session.
+**A local AI avatar powered by Qwen, Ollama, and CosyVoice3.**  
+Chat with an expressive visual-novel-style character that remembers conversations, reacts with emotions and gestures, and speaks responses.
 
 ![AI Avatar UI](assets/avatar-ui.png)
 
-## Architecture
+## Why AI Avatar?
 
-```text
-User keyboard input
-        ↓
-Next.js
-        │
-        │  conversationId + turnId + message
-        ↓
-ASP.NET Core
-        ↓
-ChatTurnService
-        ├─ idempotency lookup
-        ├─ load persisted conversation history
-        ├─ build bounded Ollama context
-        └─ call Ollama / Qwen
-                    ↓
-          structured avatar decision
-          speech + language + emotion + gesture
-                    ↓
-              C# validation
-                    ↓
-        atomic SQLite turn commit
-        ├─ Conversation when required
-        ├─ User Message
-        ├─ Assistant Message
-        └─ LLM Telemetry
-                    ↓
-          backend TTS capability
-        ├─ TtsSpeechPolicy owns language support
-        ├─ Chat API returns speechCapability
-        └─ /api/speech re-checks persisted language
-                    ↓
-              Next.js UI
-        ├─ reducer-owned session state
-        ├─ stale async invalidation
-        └─ consumes speechCapability
-              ├─ supported   → request TTS → WAV → Browser Audio
-              └─ unsupported → text only
-```
+- **Local Qwen AI** - powered by Qwen through Ollama
+- **Expressions and gestures** - replies include emotion and character behavior
+- **Local voice** - CosyVoice3 brings supported responses to life
+- **Conversation memory** - chats are stored locally with SQLite
+- **Local-first** - no cloud API is required for the main chat and speech path
+- **Responsive interaction** - new messages can interrupt old speech safely
+- **Built for Windows 11** - one-command startup after setup
 
-Core design rules:
+## Quick Start
 
-- **Server-authoritative conversation state** — SQLite owns persisted history; the client sends intent, not history.
-- **Atomic chat turns** — a completed turn is committed as one persistence unit instead of a series of partial saves.
-- **Idempotent retries** — the same logical retry reuses its `turnId` so a lost response does not duplicate messages.
-- **Deterministic control** — Qwen chooses semantic output; C# owns validation, persistence, motion, timing, and TTS policy.
-- **Lifecycle isolation** — Reset and newer turns invalidate stale HTTP, speech, replay, audio, and timer completions.
-- **Local-first runtime** — Qwen, SQLite, and CosyVoice3 run locally without a cloud API dependency on the main path.
+First time here?
 
-## Runtime
+**[Follow the Windows 11 setup guide](WINDOWS_SETUP.md)**
 
-A normal text turn follows this path:
-
-```text
-idle
- ↓
-user message
- ↓
-backend idempotency check
- ↓
-SQLite history + current message
- ↓
-Qwen
- ↓
-validated assistant decision
- ↓
-atomic SQLite commit
- ↓
-text response
- ↓
-backend TtsSpeechPolicy capability
- ├─ supported   → frontend requests TTS → synthesizing → speaking → idle
- └─ unsupported → text only → idle
-```
-
-Text generation is single-flight. Speech synthesis and playback are interruptible: sending the next user message stops current speech and starts the next text turn.
-
-Reset starts a new browser session lifecycle. Work started by an older session is cancelled when possible and ignored if it completes after that boundary.
-
-## Quick start
-
-First-time Windows installation is documented in one place:
-
-- [Windows 11 setup](WINDOWS_SETUP.md)
-
-After setup:
+Then start AI Avatar:
 
 ```powershell
 .\RUN_WINDOWS.cmd
@@ -110,7 +33,41 @@ Open:
 http://localhost:3000
 ```
 
-Run the reproducible verification pipeline with:
+## How It Works
+
+```text
+You type a message
+        ↓
+Qwen understands and replies
+        ↓
+AI Avatar chooses emotion + gesture
+        ↓
+Conversation is saved locally
+        ↓
+CosyVoice3 speaks the reply when supported
+        ↓
+Your avatar responds on screen
+```
+
+The model decides **what to say and how to express it**.  
+The application controls **memory, validation, retries, timing, and speech behavior**.
+
+> **LLM for semantic decisions. Deterministic code for control.**
+
+## Built With
+
+| Area | Technology |
+| --- | --- |
+| AI model | Qwen + Ollama |
+| Voice | CosyVoice3 |
+| Frontend | Next.js + React + TypeScript |
+| Backend | ASP.NET Core + C# |
+| Memory | SQLite + EF Core |
+| Platform | Windows 11 |
+
+## Verify Your Setup
+
+Run the full verification pipeline:
 
 ```powershell
 .\VERIFY_WINDOWS.cmd
@@ -118,47 +75,10 @@ Run the reproducible verification pipeline with:
 
 ## Documentation
 
-Documentation ownership is intentionally narrow to avoid duplicated setup instructions:
+- **[Windows Setup](WINDOWS_SETUP.md)** - installation, prerequisites, startup, and recovery
+- **[Voice & TTS Setup](VOICE_TTS_SETUP_WINDOWS.md)** - CosyVoice3 setup and troubleshooting
+- **[Project Notes](PROJECT_NOTES.md)** - architecture, engineering decisions, and implementation details
 
-- [WINDOWS_SETUP.md](WINDOWS_SETUP.md) — **canonical Windows installation, prerequisites, startup, verification, and recovery commands**.
-- [VOICE_TTS_SETUP_WINDOWS.md](VOICE_TTS_SETUP_WINDOWS.md) — **TTS-specific behavior only**: reference voice, backend capability ownership, manual TTS health checks, and CosyVoice troubleshooting.
-- [PROJECT_NOTES.md](PROJECT_NOTES.md) — current engineering scope, responsibility boundaries, invariants, and code ownership.
+## Like the Project?
 
-Do not copy installation requirements or setup command sequences into additional documents. Update the canonical owner and link to it instead.
-
-## Main project structure
-
-```text
-frontend/
-├─ components/                 # avatar, composer, telemetry, log UI
-├─ hooks/
-│  ├─ chatSessionState.ts      # reducer/state transitions
-│  ├─ useChatSession.ts        # session orchestration
-│  ├─ useChatTurnTransport.ts  # chat request, retry identity, abort
-│  ├─ useChatSpeechLifecycle.ts
-│  ├─ useAvatarSpeech.ts
-│  └─ useNeutralDecisionTimer.ts
-├─ lib/api.ts
-└─ types/chat.ts
-
-backend/
-├─ Data/                       # EF Core DbContext + entities
-├─ Endpoints/                  # HTTP routes
-├─ Migrations/                 # committed EF Core migrations
-├─ Services/
-│  ├─ ChatTurnService.cs       # one logical chat-turn boundary
-│  ├─ Ollama/                  # Qwen request/response integration
-│  ├─ Persistence/             # authoritative conversation storage
-│  └─ Speech/                  # CosyVoice integration + TTS policy
-└─ data/avatar.db              # local SQLite database
-
-tools/
-├─ cosyvoice/                  # project-local venv, upstream repo, model, voice
-└─ cosyvoice-service/          # local FastAPI wrapper
-```
-
-## Design principle
-
-> **LLM for semantic decisions. Deterministic code for control.**
-
-The project explores how a small local language model can drive an embodied interface while keeping conversation truth, persistence, retries, runtime state, motion, validation, and speech behavior under deterministic application control.
+If AI Avatar gives you ideas for your own local AI character, **star the repository** and follow the project as it evolves.

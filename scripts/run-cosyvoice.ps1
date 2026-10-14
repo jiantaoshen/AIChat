@@ -47,6 +47,9 @@ try {
     if ($config.UseOfficialDemoVoiceWhenReferenceMissing) {
         $arguments += "--use-official-demo-voice"
     }
+    if ($config.LowVramMode) {
+        $arguments += "--low-vram"
+    }
 
     & $config.PythonExecutable @arguments
     exit $LASTEXITCODE

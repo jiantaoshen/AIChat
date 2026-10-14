@@ -54,6 +54,7 @@ public sealed class OllamaRequestFactory
             {
                 temperature = _ollama.Temperature,
                 num_ctx = _ollama.ContextLength,
+                num_gpu = _ollama.NumGpu,
                 num_predict = _ollama.MaxOutputTokens,
                 top_p = 0.9,
                 repeat_penalty = 1.05

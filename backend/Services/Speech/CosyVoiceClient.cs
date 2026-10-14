@@ -88,7 +88,9 @@ public sealed class CosyVoiceClient
                 model,
                 voiceSource,
                 runtimeStatus.CudaAvailable,
-                UsedFp16: false);
+                UsedFp16: ReadBooleanHeader(response, "X-CosyVoice-FP16")
+                    ?? runtimeStatus.Fp16
+                    ?? false);
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -191,13 +193,22 @@ public sealed class CosyVoiceClient
                 return CosyVoiceRuntimeStatus.Incompatible(identity.Reason);
             }
 
+            var lowVramMode = ReadNullableBoolean(root, "lowVramMode");
+            if (lowVramMode is null || lowVramMode.Value != _options.LowVramMode)
+            {
+                return CosyVoiceRuntimeStatus.Incompatible(
+                    $"CosyVoice low-VRAM mode mismatch: expected '{_options.LowVramMode}', got '{lowVramMode?.ToString() ?? "missing"}'.");
+            }
+
             var cudaAvailable = ReadNullableBoolean(root, "cudaAvailable");
+            var fp16 = ReadNullableBoolean(root, "fp16");
 
             return new CosyVoiceRuntimeStatus(
                 snapshot.Ready,
                 snapshot.Model,
                 snapshot.VoiceSource,
                 cudaAvailable,
+                fp16,
                 IncompatibilityReason: null);
         }
         catch (Exception exception) when (
@@ -212,6 +223,12 @@ public sealed class CosyVoiceClient
         return response.Headers.TryGetValues(name, out var values)
             ? values.FirstOrDefault()
             : null;
+    }
+
+    private static bool? ReadBooleanHeader(HttpResponseMessage response, string name)
+    {
+        var raw = ReadHeader(response, name);
+        return bool.TryParse(raw, out var value) ? value : null;
     }
 
     private static string? ReadNullableString(JsonElement root, string propertyName)
@@ -257,12 +274,13 @@ public sealed class CosyVoiceClient
         string? Model,
         string? VoiceSource,
         bool? CudaAvailable,
+        bool? Fp16,
         string? IncompatibilityReason)
     {
         public static CosyVoiceRuntimeStatus Unavailable { get; } =
-            new(false, null, null, null, null);
+            new(false, null, null, null, null, null);
 
         public static CosyVoiceRuntimeStatus Incompatible(string reason) =>
-            new(false, null, null, null, reason);
+            new(false, null, null, null, null, reason);
     }
 }

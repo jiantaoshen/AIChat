@@ -165,8 +165,8 @@ public sealed class SpeechSynthesisServiceTests
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
-                        """
-                        {"service":"ai-avatar-cosyvoice","contractVersion":1,"ready":true,"model":"test-model","voiceSource":"test.wav","cudaAvailable":false}
+                        $$"""
+                        {"service":"{{CosyVoiceServiceHealthPolicy.ServiceId}}","contractVersion":{{CosyVoiceServiceHealthPolicy.ContractVersion}},"ready":true,"model":"test-model","voiceSource":"test.wav","cudaAvailable":false,"lowVramMode":true}
                         """,
                         Encoding.UTF8,
                         "application/json"),

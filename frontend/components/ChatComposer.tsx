@@ -51,7 +51,7 @@ export function ChatComposer({
             value={value}
             onChange={(event) => onChange(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入文字… / Type a message… / Skriv något…"
+            placeholder="Type a message..."
             rows={2}
             maxLength={2000}
             className="min-h-16 resize-none rounded-2xl px-4 py-3 text-[0.95rem] leading-6"

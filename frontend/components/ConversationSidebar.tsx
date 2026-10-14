@@ -68,7 +68,7 @@ export function ConversationSidebar({
           return;
         }
 
-        setError("无法读取本地对话存档，请稍后重试。");
+        setError("Unable to load the local conversation archive. Please try again.");
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);
@@ -82,7 +82,7 @@ export function ConversationSidebar({
 
   const dateFormatter = useMemo(
     () =>
-      new Intl.DateTimeFormat(undefined, {
+      new Intl.DateTimeFormat("en-US", {
         month: "short",
         day: "numeric",
         hour: "2-digit",
@@ -118,7 +118,7 @@ export function ConversationSidebar({
       setConversationToDelete(null);
     } catch (caught) {
       setDeleteError(
-        caught instanceof Error ? caught.message : "删除对话失败，请稍后重试。",
+        caught instanceof Error ? caught.message : "Failed to delete the conversation. Please try again.",
       );
     } finally {
       setIsDeleting(false);
@@ -132,16 +132,16 @@ export function ConversationSidebar({
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-widest text-primary">
-                本地保存
+                Local storage
               </p>
-              <CardTitle className="truncate text-xl">对话存档</CardTitle>
+              <CardTitle className="truncate text-xl">Conversation archive</CardTitle>
             </div>
             <Button
               type="button"
               size="icon"
               variant="outline"
-              title="新对话"
-              aria-label="新对话"
+              title="New conversation"
+              aria-label="New conversation"
               onClick={onNewConversation}
             >
               <PlusIcon />
@@ -156,7 +156,7 @@ export function ConversationSidebar({
             aria-pressed={voiceEnabled}
           >
             {voiceEnabled ? <Volume2Icon /> : <VolumeXIcon />}
-            语音：{voiceEnabled ? "开" : "关"}
+            Voice: {voiceEnabled ? "On" : "Off"}
           </Button>
         </CardHeader>
 
@@ -166,7 +166,7 @@ export function ConversationSidebar({
               {isLoading && conversations.length === 0 && (
                 <div className="flex items-center gap-2 rounded-2xl border bg-muted px-3 py-4 text-sm text-muted-foreground">
                   <LoaderCircleIcon className="size-4 animate-spin" />
-                  正在读取对话存档…
+                  Loading conversation archive...
                 </div>
               )}
 
@@ -178,7 +178,7 @@ export function ConversationSidebar({
 
               {!isLoading && !error && conversations.length === 0 && (
                 <div className="rounded-2xl border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
-                  还没有已保存的对话。
+                  No saved conversations yet.
                 </div>
               )}
 
@@ -202,10 +202,10 @@ export function ConversationSidebar({
                         <MessageSquareTextIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1">
                           <strong className="block truncate text-sm font-semibold">
-                            {conversation.title || "未命名对话"}
+                            {conversation.title || "Untitled conversation"}
                           </strong>
                           <span className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                            <span>{conversation.messageCount} 条消息</span>
+                            <span>{formatMessageCount(conversation.messageCount)}</span>
                             <time dateTime={conversation.updatedAtUtc}>
                               {formatArchiveDate(
                                 conversation.updatedAtUtc,
@@ -222,8 +222,8 @@ export function ConversationSidebar({
                       size="icon-sm"
                       variant="ghost"
                       className="absolute right-1.5 top-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      title="删除对话"
-                      aria-label={`删除对话：${conversation.title || "未命名对话"}`}
+                      title="Delete conversation"
+                      aria-label={`Delete conversation: ${conversation.title || "Untitled conversation"}`}
                       disabled={isConversationLoading || isDeleting}
                       onClick={() => requestDelete(conversation)}
                     >
@@ -255,9 +255,9 @@ export function ConversationSidebar({
       >
         <DialogContent className="max-w-md p-6" showCloseButton={!isDeleting}>
           <DialogHeader>
-            <DialogTitle>删除对话？</DialogTitle>
+            <DialogTitle>Delete conversation?</DialogTitle>
             <DialogDescription>
-              确认删除“{conversationToDelete?.title || "未命名对话"}”？该会话及其消息记录将永久删除，此操作无法撤销。
+              Delete “{conversationToDelete?.title || "Untitled conversation"}”? This conversation and its message history will be permanently deleted. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
 
@@ -277,7 +277,7 @@ export function ConversationSidebar({
                 setDeleteError(null);
               }}
             >
-              取消
+              Cancel
             </Button>
             <Button
               type="button"
@@ -286,13 +286,17 @@ export function ConversationSidebar({
               onClick={() => void confirmDelete()}
             >
               {isDeleting && <LoaderCircleIcon className="animate-spin" />}
-              确认删除
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
+}
+
+function formatMessageCount(count: number): string {
+  return `${count} ${count === 1 ? "message" : "messages"}`;
 }
 
 function formatArchiveDate(

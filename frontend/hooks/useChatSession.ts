@@ -72,10 +72,10 @@ export function useChatSession() {
     .find((message) => message.role === "assistant");
   const visibleReply =
     operationalState === "thinking"
-      ? "……"
+      ? "..."
       : state.decision.speech ||
         latestAssistantMessage?.content ||
-        (state.error ? "本地服务似乎没有正常回应，请稍后再试。" : "");
+        (state.error ? "The local service did not respond correctly. Please try again." : "");
 
   async function sendMessage() {
     const text = state.input.trim();
@@ -200,7 +200,7 @@ export function useChatSession() {
       dispatch({
         type: "conversationLoadFailed",
         message:
-          caught instanceof Error ? caught.message : "无法载入本地对话存档。",
+          caught instanceof Error ? caught.message : "Unable to load the local conversation archive.",
       });
     } finally {
       if (conversationLoadAbortRef.current === controller) {

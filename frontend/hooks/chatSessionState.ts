@@ -20,7 +20,7 @@ export const INITIAL_DECISION: AvatarDecision = {
 const INITIAL_MESSAGES: ChatMessage[] = [
   {
     role: "assistant",
-    content: "你好。想聊点什么？你也可以直接用 English 或 svenska。",
+    content: "Hello. What would you like to talk about?",
   },
 ];
 
